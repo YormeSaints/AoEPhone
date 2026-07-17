@@ -22,7 +22,11 @@ function aiUpdate(p, dt) {
   const myUnits = G.units.filter(u => u.owner === p.id);
   const myBldgs = G.buildings.filter(b => b.owner === p.id);
   const vills = myUnits.filter(u => u.type === 'villager');
-  const army = myUnits.filter(u => UNITS[u.type].cls !== 'vill' && u.type !== 'scout' || p.age >= 1 && u.type === 'scout');
+  const army = myUnits.filter(u => {
+    const cls = UNITS[u.type].cls;
+    if (cls === 'vill' || cls === 'ship' || cls === 'monk') return false;
+    return u.type !== 'scout' || p.age >= 1;
+  });
   const tc = myBldgs.find(b => b.type === 'towncenter' && b.done);
   const has = t => myBldgs.some(b => b.type === t);
   const hasDone = t => myBldgs.some(b => b.type === t && b.done);
@@ -101,6 +105,26 @@ function aiUpdate(p, dt) {
       const gold = findNearbyResource('gold', tc.tx, tc.ty, 22);
       if (gold) aiBuildAt(p, 'miningcamp', gold.tx, gold.ty);
     }
+    // fishing economy when a lake is close to home
+    if (!has('dock') && p.res.wood >= 200 && vills.length >= 8) {
+      const spot = aiFindDockSpot(tc);
+      if (spot) {
+        pay(p, BUILDINGS.dock.cost);
+        const b = addBuilding(p.id, 'dock', spot[0], spot[1], false);
+        const v = vills.find(u => u.task !== 'build');
+        if (v) cmdBuild(v, b);
+      }
+    }
+    const dock = myBldgs.find(b => b.type === 'dock' && b.done);
+    if (dock) {
+      const ships = myUnits.filter(u => u.type === 'fishingship');
+      if (ships.length < 2 && dock.queue.length === 0 && p.pop < p.popCap) trainUnit(dock, 'fishingship');
+      for (const s of ships) {
+        if (s.task !== 'idle') continue;
+        const f = findNearbyResource('fish', s.x | 0, s.y | 0, 22);
+        if (f) cmdGather(s, f);
+      }
+    }
     // farms are the food engine — build them steadily once the mill is up,
     // but cap them while wood is needed for age-requirement buildings
     const berriesLeft = !!findNearbyResource('berry', tc.tx, tc.ty, 14);
@@ -164,6 +188,7 @@ function aiUpdate(p, dt) {
     for (const b of myBldgs) {
       if (!b.done || !BUILDINGS[b.type].trains || b.type === 'towncenter' || b.queue.length >= 2) continue;
       const opts = BUILDINGS[b.type].trains.filter(t => UNITS[t].age <= p.age && t !== 'villager' && t !== 'monk' &&
+        UNITS[t].cls !== 'ship' &&
         !(t === 'scout' && p.age >= 2 && p.res.gold > 200) &&
         !(t === 'trebuchet' && army.filter(a => a.type === 'trebuchet').length >= 2));
       if (!opts.length) continue;
@@ -256,10 +281,28 @@ function aiBuildAt(p, type, cx, cy) {
 function aiCanPlace(type, tx, ty) { // AI ignores fog (it "knows" its own territory)
   const d = BUILDINGS[type];
   for (let y = ty; y < ty + d.size; y++) for (let x = tx; x < tx + d.size; x++) {
-    if (!inMap(x, y) || !terrainPassable(x, y)) return false;
+    if (!inMap(x, y)) return false;
+    const water = G.map.terr[tIdx(x, y)] === T_WATER;
+    if (d.water ? !water : water) return false;
     if (G.map.res[tIdx(x, y)] || G.map.occ[tIdx(x, y)]) return false;
   }
+  if (d.water) {
+    let shore = false;
+    for (let y = ty - 1; y <= ty + d.size && !shore; y++) for (let x = tx - 1; x <= tx + d.size && !shore; x++) {
+      if (inMap(x, y) && terrainPassable(x, y)) shore = true;
+    }
+    if (!shore) return false;
+  }
   return true;
+}
+
+function aiFindDockSpot(tc) {
+  for (let r = 3; r <= 15; r++)
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      if (aiCanPlace('dock', tc.tx + dx, tc.ty + dy)) return [tc.tx + dx, tc.ty + dy];
+    }
+  return null;
 }
 
 function aiPickTarget(p) {

@@ -26,10 +26,10 @@ function makeMap(rng) {
   for (let i = 0; i < terr.length; i++) terr[i] = rng() < 0.18 ? T_GRASS2 : T_GRASS;
   // dirt patches
   for (let p = 0; p < 26; p++) blob(terr, rng, T_DIRT, 2 + (rng() * 4 | 0));
-  // a lake or two away from spawn corners
-  for (let p = 0; p < 2; p++) {
-    const cx = 30 + rng() * 28, cy = 30 + rng() * 28;
-    blobAt(terr, rng, T_WATER, cx, cy, 3 + rng() * 3, T_SAND);
+  // lakes away from the spawn corners — big enough for docks and fishing
+  for (let p = 0; p < 3; p++) {
+    const cx = 26 + rng() * 36, cy = 26 + rng() * 36;
+    blobAt(terr, rng, T_WATER, cx, cy, 4.5 + rng() * 3.5, T_SAND);
   }
   return { terr, res, occ };
 
@@ -53,14 +53,19 @@ function terrainPassable(x, y) {
   if (!inMap(x, y)) return false;
   return G.map.terr[tIdx(x, y)] !== T_WATER;
 }
-function tilePassable(x, y) {
-  if (!terrainPassable(x, y)) return false;
+// naval=true routes over water instead of land
+function tilePassable(x, y, naval) {
+  if (!inMap(x, y)) return false;
+  const water = G.map.terr[tIdx(x, y)] === T_WATER;
+  if (naval ? !water : water) return false;
   const i = tIdx(x, y);
   if (G.map.res[i]) return false;
   const b = G.map.occ[i];
   if (b && !BUILDINGS[b.type].passable) return false;
   return true;
 }
+function isEnemy(o1, o2) { return G.players[o1].team !== G.players[o2].team; }
+function unitNaval(u) { return !!UNITS[u.type].naval; }
 
 // ---------------- Entities ----------------
 let NEXT_ID = 1;
@@ -73,7 +78,7 @@ function addResource(rtype, tx, ty, amount) {
 }
 
 function resGives(r) { // which player-resource a map resource yields
-  return r.rtype === 'berry' ? 'food' : r.rtype === 'tree' ? 'wood' : r.rtype;
+  return r.rtype === 'berry' || r.rtype === 'fish' ? 'food' : r.rtype === 'tree' ? 'wood' : r.rtype;
 }
 
 function addBuilding(owner, type, tx, ty, finished) {
@@ -131,9 +136,9 @@ function unitBonus(u) {
 }
 
 // ---------------- Players ----------------
-function makePlayer(id, isAI, color) {
+function makePlayer(id, isAI, color, team, name) {
   return {
-    id, isAI, color,
+    id, isAI, color, team, name,
     res: { wood: 200, food: 200, gold: 100, stone: 200 },
     age: 0, ageResearch: null,      // {t, total}
     pop: 0, popCap: 0,
@@ -181,17 +186,21 @@ function applyTech(p, id) {
 }
 
 // ---------------- Game setup ----------------
-function newGame(difficulty) {
+function newGame(difficulty, opponents) {
+  opponents = opponents || 1;
   const rng = mulberry32((Math.random() * 1e9) | 0);
+  const players = [makePlayer(0, false, '#3d7ef5', 0, 'You')];
+  const aiCols = [['#e33e3e', 'Red'], ['#e8a33d', 'Orange']];
+  for (let i = 0; i < opponents; i++) players.push(makePlayer(1 + i, true, aiCols[i][0], 1, aiCols[i][1]));
   G = {
     rng, map: makeMap(rng), units: [], buildings: [], resources: [], projectiles: [],
-    players: [makePlayer(0, false, '#3d7ef5'), makePlayer(1, true, '#e33e3e')],
-    time: 0, over: null, difficulty,
+    players, time: 0, over: null, difficulty, opponents,
     explored: new Uint8Array(MAP_W * MAP_H), visible: new Uint8Array(MAP_W * MAP_H),
     fogT: 0, sepGrid: new Map(), effects: [],
   };
-  const spots = [[12, MAP_H - 16], [MAP_W - 16, 12]]; // player bottom-left, enemy top-right (iso)
-  for (let pi = 0; pi < 2; pi++) {
+  // player bottom-left; enemies top-right, then top-left
+  const spots = [[12, MAP_H - 16], [MAP_W - 16, 12], [12, 12]];
+  for (let pi = 0; pi < players.length; pi++) {
     const [sx, sy] = spots[pi];
     clearArea(sx - 3, sy - 3, 10, 10);
     addBuilding(pi, 'towncenter', sx, sy, true);
@@ -202,6 +211,12 @@ function newGame(difficulty) {
     scatterNear(sx, sy, 'berry', 6, 125, 5, 9, rng);
     scatterNear(sx, sy, 'gold', 5, 800, 7, 12, rng);
     scatterNear(sx, sy, 'stone', 4, 350, 8, 13, rng);
+  }
+  // fish shoals in the lakes
+  for (let y = 0; y < MAP_H; y += 2) for (let x = 0; x < MAP_W; x += 2) {
+    if (G.map.terr[tIdx(x, y)] === T_WATER && rng() < 0.09 && !G.map.res[tIdx(x, y)]) {
+      addResource('fish', x, y, 350);
+    }
   }
   // wild forests, neutral golds/stones
   for (let f = 0; f < 30; f++) {
@@ -234,11 +249,11 @@ function newGame(difficulty) {
 }
 
 // ---------------- Pathfinding (A*, 8-dir) ----------------
-function findPath(sx, sy, gx, gy, near) {
+function findPath(sx, sy, gx, gy, near, naval) {
   sx |= 0; sy |= 0; gx |= 0; gy |= 0;
   if (!inMap(gx, gy)) return null;
-  if (!tilePassable(gx, gy) || near) {
-    const g2 = nearestPassable(gx, gy, near || 1);
+  if (!tilePassable(gx, gy, naval) || near) {
+    const g2 = nearestPassable(gx, gy, near || 1, naval);
     if (!g2) return null;
     gx = g2[0]; gy = g2[1];
   }
@@ -255,8 +270,8 @@ function findPath(sx, sy, gx, gy, near) {
     const cx = cur % MAP_W, cy = (cur / MAP_W) | 0, cg = gCost.get(cur);
     for (const [dx, dy, c] of DIRS) {
       const nx = cx + dx, ny = cy + dy;
-      if (!tilePassable(nx, ny)) continue;
-      if (dx && dy && !tilePassable(cx + dx, cy) && !tilePassable(cx, cy + dy)) continue; // no corner cut
+      if (!tilePassable(nx, ny, naval)) continue;
+      if (dx && dy && !tilePassable(cx + dx, cy, naval) && !tilePassable(cx, cy + dy, naval)) continue; // no corner cut
       const nk = tIdx(nx, ny), ng = cg + c;
       if (ng < (gCost.get(nk) ?? Infinity)) {
         gCost.set(nk, ng); came.set(nk, cur);
@@ -274,11 +289,11 @@ function findPath(sx, sy, gx, gy, near) {
   return path;
 }
 
-function nearestPassable(gx, gy, maxR) {
+function nearestPassable(gx, gy, maxR, naval) {
   for (let r = 0; r <= Math.max(maxR, 6); r++)
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-      if (tilePassable(gx + dx, gy + dy)) return [gx + dx, gy + dy];
+      if (tilePassable(gx + dx, gy + dy, naval)) return [gx + dx, gy + dy];
     }
   return null;
 }
@@ -309,7 +324,7 @@ class MinHeap {
 // ---------------- Commands ----------------
 function cmdMove(u, x, y) {
   u.task = 'move'; u.target = null;
-  u.path = findPath(u.x, u.y, x, y, 0) || [];
+  u.path = findPath(u.x, u.y, x, y, 0, unitNaval(u)) || [];
   if (u.path.length) { const last = u.path[u.path.length - 1]; u.path[u.path.length - 1] = [x === (x|0) ? last[0] : x, y === (y|0) ? last[1] : y]; }
   u.pathI = 0; u.dest = [x, y];
 }
@@ -319,7 +334,8 @@ function cmdAttack(u, target) {
   u.stuckT = 0; u.bestDist = Infinity;
 }
 function cmdGather(u, res) {
-  if (UNITS[u.type].cls !== 'vill') { cmdMove(u, res.tx + 0.5, res.ty + 0.5); return; }
+  const canGather = res.rtype === 'fish' ? u.type === 'fishingship' : UNITS[u.type].cls === 'vill';
+  if (!canGather) { cmdMove(u, res.tx + 0.5, res.ty + 0.5); return; }
   u.task = 'gather'; u.target = res; u.path = null; u.repath = 0;
   if (u.carryType !== resGives(res)) { u.carry = 0; u.carryType = null; }
   u.gatherKind = res.rtype;
@@ -343,10 +359,24 @@ function placeBuilding(owner, type, tx, ty) {
 function canPlace(type, tx, ty) {
   const d = BUILDINGS[type];
   for (let y = ty; y < ty + d.size; y++) for (let x = tx; x < tx + d.size; x++) {
-    if (!inMap(x, y) || !terrainPassable(x, y)) return false;
+    if (!inMap(x, y)) return false;
     const i = tIdx(x, y);
+    // docks sit on water; everything else on land
+    const water = G.map.terr[i] === T_WATER;
+    if (d.water ? !water : water) return false;
     if (G.map.res[i] || G.map.occ[i]) return false;
     if (!G.explored[i]) return false;
+  }
+  if (d.water) {
+    // need at least one orthogonally adjacent land tile (the pier's shore)
+    let shore = false;
+    for (let y = ty - 1; y <= ty + d.size && !shore; y++) for (let x = tx - 1; x <= tx + d.size && !shore; x++) {
+      if (!inMap(x, y)) continue;
+      if (Math.min(Math.abs(x - tx), Math.abs(x - (tx + d.size - 1))) > 0 &&
+          Math.min(Math.abs(y - ty), Math.abs(y - (ty + d.size - 1))) > 0) continue;
+      if (terrainPassable(x, y)) shore = true;
+    }
+    if (!shore) return false;
   }
   // don't allow entombing units of any player
   for (const u of G.units) {
@@ -457,7 +487,7 @@ function updateBuilding(b, dt) {
     if (q.t >= q.total) {
       b.queue.shift();
       if (q.what === 'unit') {
-        const spot = spawnSpot(b);
+        const spot = spawnSpot(b, !!UNITS[q.type].naval);
         const u = addUnit(b.owner, q.type, spot[0], spot[1]);
         if (b.rally) {
           if (b.rally.res) { const r = G.map.res[tIdx(b.rally.x | 0, b.rally.y | 0)]; if (r) cmdGather(u, r); else cmdMove(u, b.rally.x, b.rally.y); }
@@ -489,11 +519,11 @@ function updateBuilding(b, dt) {
   // farm regrowth handled on deplete in gather
 }
 
-function spawnSpot(b) {
-  const s = nearestPassable(b.tx + (b.size >> 1), b.ty + b.size, 4) || [b.tx, b.ty + b.size];
+function spawnSpot(b, naval) {
+  const s = nearestPassable(b.tx + (b.size >> 1), b.ty + b.size, 4, naval) || [b.tx, b.ty + b.size];
   return [s[0] + 0.5, s[1] + 0.5];
 }
-function playerName(p) { return p.id === 0 ? 'You' : 'The enemy'; }
+function playerName(p) { return p.id === 0 ? 'You' : p.name; }
 
 // ---- unit update ----
 function updateUnit(u, dt) {
@@ -503,7 +533,7 @@ function updateUnit(u, dt) {
   switch (u.task) {
     case 'idle':
       if (d.cls === 'monk') monkIdleHeal(u, dt);
-      else if (d.cls !== 'vill' && d.cls !== 'siege' || u.type === 'mangonel') autoAcquire(u);
+      else if (u.type !== 'fishingship' && (d.cls !== 'vill' && d.cls !== 'siege' || u.type === 'mangonel')) autoAcquire(u);
       break;
     case 'move':
       if (followPath(u, dt)) { u.task = 'idle'; u.path = null; }
@@ -559,7 +589,7 @@ function approach(u, e, range, dt) {
   if (!u.path || u.pathI >= u.path.length || u.repath <= 0) {
     const [cx, cy] = entCenter(e);
     const moving = e.kind === 'unit' && e.task !== 'idle';
-    u.path = findPath(u.x, u.y, cx, cy, e.kind === 'unit' ? 0 : 1);
+    u.path = findPath(u.x, u.y, cx, cy, e.kind === 'unit' ? 0 : 1, unitNaval(u));
     u.pathI = 0;
     u.repath = moving ? 0.8 : 3.0;
     if (!u.path || !u.path.length) { u.repath = 1.5; }
@@ -574,7 +604,7 @@ function approach(u, e, range, dt) {
       const step = Math.min(unitStat(u, 'speed') * dt, dd);
       const nx = u.x + dx / dd * step, ny = u.y + dy / dd * step;
       const onTarget = e.kind === 'bldg' && G.map.occ[tIdx(nx | 0, ny | 0)] === e;
-      if (tilePassable(nx | 0, ny | 0) || (onTarget && BUILDINGS[e.type].passable)) { u.x = nx; u.y = ny; u.moved = true; }
+      if (tilePassable(nx | 0, ny | 0, unitNaval(u)) || (onTarget && BUILDINGS[e.type].passable)) { u.x = nx; u.y = ny; u.moved = true; }
     }
   }
   return entDist(u, e) <= range;
@@ -663,7 +693,7 @@ function dealDamage(e, atk, bonus, melee, fromOwner) {
 function updateConvert(u, dt) {
   const t = u.target;
   u.rest = Math.max(0, (u.rest || 0) - dt);
-  if (!alive(t) || t.kind !== 'unit' || t.owner === u.owner) {
+  if (!alive(t) || t.kind !== 'unit' || !isEnemy(u.owner, t.owner)) {
     u.task = 'idle'; u.target = null; u.path = null; u.chant = 0;
     return;
   }
@@ -717,12 +747,12 @@ function autoAcquireNear(u) {
 function nearestEnemy(owner, x, y, range, onlyKind) {
   let best = null, bd = range;
   if (onlyKind !== 'bldg') for (const e of G.units) {
-    if (e.owner === owner) continue;
+    if (!isEnemy(owner, e.owner)) continue;
     const dd = Math.hypot(e.x - x, e.y - y);
     if (dd < bd) { bd = dd; best = e; }
   }
   for (const e of G.buildings) {
-    if (e.owner === owner || onlyKind === 'unit') continue;
+    if (!isEnemy(owner, e.owner) || onlyKind === 'unit') continue;
     if (e.type === 'farm' || e.type === 'palisade' || e.type === 'stonewall') continue;
     const dd = Math.hypot(e.tx + e.size / 2 - x, e.ty + e.size / 2 - y) - e.size / 2;
     if (dd < bd) { bd = dd; best = e; }
@@ -731,7 +761,7 @@ function nearestEnemy(owner, x, y, range, onlyKind) {
 }
 
 // ---- gathering ----
-function dropAmount(u) { return BASE_CARRY + G.players[u.owner].vill.carry; }
+function dropAmount(u) { return u.type === 'fishingship' ? 15 : BASE_CARRY + G.players[u.owner].vill.carry; }
 
 function updateGather(u, dt, d) {
   const p = G.players[u.owner];
@@ -801,8 +831,10 @@ function resumeWork(u) {
 }
 function nearestDrop(u) {
   let best = null, bd = 1e9;
+  const naval = unitNaval(u);
   for (const b of G.buildings) {
     if (b.owner !== u.owner || !b.done) continue;
+    if (!!BUILDINGS[b.type].water !== naval) continue; // ships use docks, villagers use land sites
     const dr = BUILDINGS[b.type].drop;
     if (!dr || !dr.includes(u.carryType)) continue;
     const dd = entDist(u, b);
@@ -889,7 +921,7 @@ function separateUnits(dt) {
   }
   function nudge(u, dx, dy) {
     const nx = u.x + dx, ny = u.y + dy;
-    if (tilePassable(nx | 0, ny | 0)) { u.x = nx; u.y = ny; }
+    if (tilePassable(nx | 0, ny | 0, unitNaval(u))) { u.x = nx; u.y = ny; }
   }
 }
 
@@ -910,11 +942,11 @@ function updateProjectiles(dt) {
     if (dist <= step) {
       if (p.splash) {
         for (const u of G.units) {
-          if (u.owner === p.owner) continue;
+          if (!isEnemy(p.owner, u.owner)) continue;
           if (Math.hypot(u.x - p.gx, u.y - p.gy) <= p.splash) dealDamage(u, p.atk, 0, false, p.owner);
         }
         for (const b of G.buildings) {
-          if (b.owner === p.owner) continue;
+          if (!isEnemy(p.owner, b.owner)) continue;
           if (Math.hypot(b.tx + b.size / 2 - p.gx, b.ty + b.size / 2 - p.gy) <= p.splash + b.size / 2) dealDamage(b, p.atk, p.bonus, false, p.owner);
         }
         G.effects.push({ kind: 'boom', x: p.gx, y: p.gy, t: 0.4 });
@@ -953,8 +985,13 @@ function checkVictory() {
     if (p.defeated) continue;
     const hasB = G.buildings.some(b => b.owner === p.id && b.type !== 'farm' && b.type !== 'palisade' && b.type !== 'stonewall');
     const hasU = G.units.some(u => u.owner === p.id);
-    if (!hasB && !hasU) p.defeated = true;
+    if (!hasB && !hasU) {
+      p.defeated = true;
+      if (p.id !== 0 && !G.players.every(q => q.id === 0 || q.defeated)) {
+        uiToast(`${p.name} has been defeated!`); sfx('age');
+      }
+    }
   }
   if (G.players[0].defeated) G.over = 'defeat';
-  else if (G.players[1].defeated) G.over = 'victory';
+  else if (G.players.every(p => p.id === 0 || p.defeated)) G.over = 'victory';
 }

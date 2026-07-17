@@ -17,8 +17,12 @@ The game is a static web page — any static host works:
    branch**, pick this branch, folder `/ (root)`. Open the published URL in
    Safari on your phone.
 2. In Safari, tap **Share → Add to Home Screen**. The game installs like an
-   app: full screen, no browser chrome, works offline after the first load.
-3. Landscape is the intended orientation (it's a wide battlefield).
+   app: full screen, no browser chrome.
+3. **Offline play**: after the first load, a service worker caches the whole
+   game — a "📦 Game cached" toast confirms it. From then on it launches and
+   plays with no connection at all (airplane mode included), and your saved
+   game lives on the device.
+4. Landscape is the intended orientation (it's a wide battlefield).
 
 To try it on a computer first: `python3 -m http.server` in the repo folder,
 then open `http://localhost:8000` (mouse works: drag to pan, wheel to zoom,
@@ -48,9 +52,15 @@ shift-drag to box-select).
 - **More tools:** the Market trades resources for gold · Monks convert enemy
   units and heal your own · Palisade and Stone Walls buy you time · the ⏩
   button in the top bar runs the game at 1×/1.5×/2×.
-- **Win** by destroying the red player's army and buildings before their
-  attack waves overwhelm you. Three difficulty levels that change the AI's
-  economy, villager count and army sizes.
+- **Naval play:** build a Dock on a lake shore, fish the shoals with Fishing
+  Ships for fast food, and bombard shorelines with War Galleys.
+- **1 or 2 opponents:** face a single rival or two allied AI empires
+  attacking from different directions. Three difficulty levels that change
+  the AI's economy, villager count and army sizes.
+- **Saved games:** progress auto-saves every 30 seconds, on pause, and when
+  you switch apps — pick up where you left off with *Continue* on the menu.
+- **Win** by destroying every rival's army and buildings before their attack
+  waves overwhelm you.
 
 ## 🛠 Tech
 

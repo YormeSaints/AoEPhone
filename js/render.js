@@ -333,6 +333,31 @@ function drawBuildingArt(g, type, s, cx, base, teamCol, done) {
       }
       break;
     }
+    case 'dock': {
+      // piles + planked pier over the water
+      g.strokeStyle = '#6b4a2a'; g.lineWidth = 3;
+      for (const [dx, dy] of [[-fw * 0.6, 0], [fw * 0.6, 0], [0, -fh * 0.6], [0, fh * 0.6]]) {
+        g.beginPath(); g.moveTo(cx + dx, base + dy + 4); g.lineTo(cx + dx, base + dy - 10); g.stroke();
+      }
+      g.fillStyle = '#a3814f';
+      g.beginPath();
+      g.moveTo(cx, base - fh - 8); g.lineTo(cx + fw, base - 8); g.lineTo(cx, base + fh - 8); g.lineTo(cx - fw, base - 8);
+      g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(90,60,20,0.4)'; g.lineWidth = 1.5;
+      for (let i = 1; i < 4; i++) {
+        g.beginPath();
+        g.moveTo(cx - fw + i * (fw / 2), base - 8 - fh + i * (fh / 2));
+        g.lineTo(cx + i * (fw / 2) - 0, base - 8 + fh - (4 - i) * (fh / 2));
+        g.stroke();
+      }
+      // small hut on the pier
+      g.fillStyle = '#8d6c40';
+      g.fillRect(cx - 8, base - fh * 0.4 - 24, 16, 16);
+      g.fillStyle = '#6c5433';
+      g.beginPath(); g.moveTo(cx - 10, base - fh * 0.4 - 24); g.lineTo(cx, base - fh * 0.4 - 32); g.lineTo(cx + 10, base - fh * 0.4 - 24); g.closePath(); g.fill();
+      banner(cx + fw * 0.5, base - 12);
+      break;
+    }
     case 'palisade': {
       g.fillStyle = '#8a6b40';
       for (let i = -1; i <= 1; i++) {
@@ -391,6 +416,19 @@ function resSprite(rtype, variant) {
         g.fillStyle = '#f7d94c';
         for (let i = 0; i < 5; i++) g.fillRect(cx - 9 + rng() * 18, base - 12 + rng() * 8, 2.5, 2.5);
       }
+    } else if (rtype === 'fish') {
+      // rippling shoal
+      g.strokeStyle = 'rgba(230,240,255,0.55)'; g.lineWidth = 1.4;
+      for (let i = 0; i < 2; i++) {
+        g.beginPath(); g.ellipse(cx, base - 4, 9 + i * 4, 4 + i * 2, 0, 0, 7); g.stroke();
+      }
+      g.fillStyle = '#c8d8e8';
+      for (let i = 0; i < 3; i++) {
+        const fx = cx - 7 + rng() * 14, fy = base - 6 + rng() * 5;
+        g.beginPath();
+        g.ellipse(fx, fy, 3.2, 1.3, rng() - 0.5, 0, 7); g.fill();
+        g.beginPath(); g.moveTo(fx - 3.5, fy); g.lineTo(fx - 5.5, fy - 1.5); g.lineTo(fx - 5.5, fy + 1.5); g.closePath(); g.fill();
+      }
     } else if (rtype === 'berry') {
       g.fillStyle = '#3f7d3b';
       g.beginPath(); g.ellipse(cx, base - 7, 13, 9, 0, 0, 7); g.fill();
@@ -412,6 +450,37 @@ function drawUnit(g, u, px, py, z) {
   g.fillStyle = 'rgba(0,0,0,0.25)';
   g.beginPath(); g.ellipse(px, py, 7 * s, 3.2 * s, 0, 0, 7); g.fill();
 
+  if (d.cls === 'ship') {
+    const bobW = Math.sin(G.time * 2.2 + u.id) * 1.2 * s;
+    // hull
+    g.fillStyle = '#7a5c36';
+    g.beginPath();
+    g.moveTo(px - 11 * s, py - 4 * s + bobW);
+    g.quadraticCurveTo(px, py + 4 * s + bobW, px + 11 * s, py - 4 * s + bobW);
+    g.lineTo(px + 8 * s, py - 8 * s + bobW); g.lineTo(px - 8 * s, py - 8 * s + bobW);
+    g.closePath(); g.fill();
+    g.fillStyle = '#94744a';
+    g.fillRect(px - 8 * s, py - 9 * s + bobW, 16 * s, 2 * s);
+    // mast + sail
+    g.strokeStyle = '#54432a'; g.lineWidth = 1.8 * s;
+    g.beginPath(); g.moveTo(px, py - 8 * s + bobW); g.lineTo(px, py - 24 * s + bobW); g.stroke();
+    if (u.type === 'wargalley') {
+      g.fillStyle = '#e8e4d8';
+      g.beginPath(); g.moveTo(px, py - 23 * s + bobW); g.lineTo(px + 9 * s, py - 14 * s + bobW); g.lineTo(px, py - 11 * s + bobW); g.closePath(); g.fill();
+      g.fillStyle = col;
+      g.fillRect(px - 1 * s, py - 24 * s + bobW, 6 * s, 3 * s);
+    } else {
+      g.fillStyle = col;
+      g.beginPath(); g.moveTo(px, py - 22 * s + bobW); g.lineTo(px + 7 * s, py - 15 * s + bobW); g.lineTo(px, py - 12 * s + bobW); g.closePath(); g.fill();
+      // fishing net
+      g.strokeStyle = 'rgba(230,228,216,0.7)'; g.lineWidth = 1 * s;
+      g.beginPath(); g.moveTo(px - 8 * s, py - 6 * s + bobW); g.lineTo(px - 13 * s, py + 1 * s + bobW); g.stroke();
+    }
+    // wake ripple
+    g.strokeStyle = 'rgba(220,235,255,0.35)'; g.lineWidth = 1.2;
+    g.beginPath(); g.ellipse(px, py + 1 * s + bobW, 13 * s, 4 * s, 0, 0, 7); g.stroke();
+    return;
+  }
   if (d.cls === 'monk') {
     // robed figure, team-colored sash, staff
     g.fillStyle = '#4a3f33';
@@ -769,7 +838,7 @@ function renderMinimap() {
     const i = tIdx(x, y);
     if (!G.explored[i]) continue;
     const r = G.map.res[i];
-    img.fillStyle = r ? (r.rtype === 'tree' ? '#2c5426' : r.rtype === 'gold' ? '#e3c33f' : r.rtype === 'stone' ? '#9a9a9a' : '#b0405a')
+    img.fillStyle = r ? (r.rtype === 'tree' ? '#2c5426' : r.rtype === 'gold' ? '#e3c33f' : r.rtype === 'stone' ? '#9a9a9a' : r.rtype === 'fish' ? '#5a8fc4' : '#b0405a')
       : MM_COL[G.map.terr[i]];
     const [mx, my] = px(x, y);
     img.fillRect(mx, my, 2.2, 1.4);
@@ -783,7 +852,7 @@ function renderMinimap() {
   }
   for (const u of G.units) {
     if (u.owner !== 0 && !tileVisible(u.x, u.y)) continue;
-    img.fillStyle = u.owner === 0 ? '#9cc4ff' : '#ff9c9c';
+    img.fillStyle = G.players[u.owner].color;
     const [mx, my] = px(u.x, u.y);
     img.fillRect(mx, my, 2, 2);
   }

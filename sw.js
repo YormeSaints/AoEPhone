@@ -1,9 +1,9 @@
 'use strict';
 // Cache-first service worker: after the first visit the game runs fully offline.
-const CACHE = 'empirephone-v2';
+const CACHE = 'empirephone-v3';
 const ASSETS = [
   '.', 'index.html', 'manifest.json', 'icon.png', 'icon-512.png',
-  'js/data.js', 'js/engine.js', 'js/ai.js', 'js/render.js', 'js/input.js', 'js/ui.js', 'js/main.js',
+  'js/data.js', 'js/engine.js', 'js/saves.js', 'js/ai.js', 'js/render.js', 'js/input.js', 'js/ui.js', 'js/main.js',
 ];
 
 self.addEventListener('install', (e) => {

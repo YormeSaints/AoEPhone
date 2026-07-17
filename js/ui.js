@@ -96,7 +96,7 @@ function rebuildPanel() {
     const vills = sel.filter(u => u.kind === 'unit' && UNITS[u.type].cls === 'vill');
     if (vills.length) {
       const pages = [
-        ['house', 'mill', 'lumbercamp', 'miningcamp', 'farm', 'market', 'palisade', 'stonewall', 'towncenter'],
+        ['house', 'mill', 'lumbercamp', 'miningcamp', 'farm', 'dock', 'market', 'palisade', 'stonewall', 'towncenter'],
         ['barracks', 'archeryrange', 'stable', 'blacksmith', 'monastery', 'tower', 'siegeworkshop', 'castle'],
       ];
       addBtn(panel, UI.buildPage === 0 ? '🏠' : '⚔️', UI.buildPage === 0 ? 'Economy' : 'Military', () => {
@@ -168,7 +168,7 @@ function rebuildPanel() {
 
 // ---------- selection info lines (rebuilt cheaply every UI tick) ----------
 function resInfoHTML(r) {
-  const names = { tree: 'Tree', gold: 'Gold Mine', stone: 'Stone Mine', berry: 'Berry Bush' };
+  const names = { tree: 'Tree', gold: 'Gold Mine', stone: 'Stone Mine', berry: 'Berry Bush', fish: 'Fish Shoal' };
   return `<div class="sel-name">${names[r.rtype]}</div><div class="sel-sub">${Math.ceil(r.amount)} ${RES_ICON[resGives(r)]} left</div>`;
 }
 function unitInfoHTML(sel) {
@@ -265,16 +265,28 @@ function showOverlay(which) {
   ov.classList.remove('hidden');
   const box = $('overlay-box');
   if (which === 'menu') {
+    const canContinue = hasSave();
     box.innerHTML = `
       <h1>Empire<span>Phone</span></h1>
       <p class="tagline">A real-time strategy game of four ages,<br>built for your phone.</p>
+      ${canContinue ? '<div class="menu-btns"><button class="menu-btn primary" id="btn-continue">💾 Continue saved game</button></div>' : ''}
+      <div class="opp-row">Opponents:
+        <button class="opp-btn" data-o="1">1 ⚔️</button>
+        <button class="opp-btn" data-o="2">2 ⚔️⚔️</button>
+      </div>
       <div class="menu-btns">
         <button class="menu-btn" data-d="easy">🌿 Easy</button>
-        <button class="menu-btn primary" data-d="normal">⚔️ Normal</button>
+        <button class="menu-btn ${canContinue ? '' : 'primary'}" data-d="normal">⚔️ Normal</button>
         <button class="menu-btn" data-d="hard">🔥 Hard</button>
       </div>
       <button class="menu-btn ghost" id="btn-how">📖 How to play</button>`;
-    box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { startGame(b.dataset.d); });
+    const oppBtns = box.querySelectorAll('.opp-btn');
+    const syncOpp = () => oppBtns.forEach(b => b.classList.toggle('sel', +b.dataset.o === UI.opponents));
+    UI.opponents = UI.opponents || 1;
+    syncOpp();
+    oppBtns.forEach(b => b.onclick = () => { UI.opponents = +b.dataset.o; syncOpp(); });
+    box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { startGame(b.dataset.d, UI.opponents); });
+    if (canContinue) $('btn-continue').onclick = () => { resumeSavedGame(); };
     $('btn-how').onclick = () => showOverlay('help');
   } else if (which === 'help') {
     box.innerHTML = `
@@ -291,18 +303,23 @@ function showOverlay(which) {
       <button class="menu-btn primary" id="btn-back">Back</button>`;
     $('btn-back').onclick = () => showOverlay(G ? 'pause' : 'menu');
   } else if (which === 'pause') {
+    if (G && !G.over) saveGame();
     box.innerHTML = `
       <h2>Paused</h2>
+      <p class="tagline" style="margin:6px 0 14px">Progress saved automatically.</p>
       <div class="menu-btns">
         <button class="menu-btn primary" id="btn-resume">▶️ Resume</button>
         <button class="menu-btn" id="btn-help2">📖 How to play</button>
-        <button class="menu-btn" id="btn-restart">🔄 New game</button>
+        <button class="menu-btn" id="btn-quit">💾 Save &amp; quit to menu</button>
+        <button class="menu-btn" id="btn-restart">🔄 Abandon &amp; new game</button>
       </div>`;
     $('btn-resume').onclick = hideOverlay;
     $('btn-help2').onclick = () => showOverlay('help');
-    $('btn-restart').onclick = () => showOverlay('menu');
+    $('btn-quit').onclick = () => { saveGame(); G = null; showOverlay('menu'); };
+    $('btn-restart').onclick = () => { clearSave(); showOverlay('menu'); };
     paused = true;
   } else if (which === 'victory' || which === 'defeat') {
+    clearSave();
     const win = which === 'victory';
     box.innerHTML = `
       <h2>${win ? '🏆 Victory!' : '💀 Defeat'}</h2>

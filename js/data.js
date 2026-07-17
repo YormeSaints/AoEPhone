@@ -24,6 +24,8 @@ const UNITS = {
   ram:       { name:'Battering Ram', cls:'siege', cost:{wood:160,gold:75},  hp:200, atk:3,  range:0.7, rof:5,   speed:0.55, los:3, armor:0, parmor:15,pop:2, time:22, age:2, from:'siegeworkshop', icon:'🐏', bonus:{bldg:60} },
   mangonel:  { name:'Mangonel',      cls:'siege', cost:{wood:160,gold:135}, hp:50,  atk:28, range:6,   rof:6,   speed:0.6,  los:8, armor:0, parmor:6, pop:2, time:24, age:2, from:'siegeworkshop', icon:'💥', bonus:{bldg:12}, splash:1.1 },
   monk:      { name:'Monk',          cls:'monk',  cost:{gold:100},          hp:30,  atk:0,  range:4,   rof:1,   speed:0.7,  los:9, armor:0, parmor:0, pop:1, time:20, age:2, from:'monastery',  icon:'🙏', bonus:{}, convert:true },
+  fishingship:{name:'Fishing Ship',  cls:'ship',  cost:{wood:75},           hp:60,  atk:0,  range:0.6, rof:2,   speed:1.1,  los:6, armor:0, parmor:4, pop:1, time:16, age:0, from:'dock',       icon:'🎣', bonus:{}, naval:true },
+  wargalley: { name:'War Galley',    cls:'ship',  cost:{wood:90,gold:30},   hp:120, atk:7,  range:5,   rof:3,   speed:1.2,  los:8, armor:0, parmor:6, pop:1, time:20, age:1, from:'dock',       icon:'⛵', bonus:{ship:4, bldg:8}, naval:true },
   trebuchet: { name:'Trebuchet',     cls:'siege', cost:{wood:200,gold:200}, hp:80,  atk:45, range:10,  rof:8,   speed:0.4,  los:11,armor:1, parmor:8, pop:2, time:30, age:3, from:'castle',     icon:'🏗️', bonus:{bldg:120}, splash:0.8 },
 };
 
@@ -44,6 +46,7 @@ const BUILDINGS = {
   castle:       { name:'Castle',         cost:{stone:650},          hp:4200, size:4, age:2, los:10, trains:['guard','trebuchet'], atk:13, range:8, rof:1.6, time:90, icon:'🏰' },
   monastery:    { name:'Monastery',      cost:{wood:175},           hp:1100, size:3, age:2, los:6, trains:['monk'], time:30, icon:'🕍' },
   market:       { name:'Market',         cost:{wood:175},           hp:1200, size:3, age:1, los:5, trade:true, time:25, icon:'⚖️' },
+  dock:         { name:'Dock',           cost:{wood:150},           hp:1000, size:2, age:0, los:6, water:true, drop:['food','wood'], trains:['fishingship','wargalley'], time:25, icon:'⚓' },
   palisade:     { name:'Palisade Wall',  cost:{wood:4},             hp:250,  size:1, age:0, los:1, time:5, icon:'🚧' },
   stonewall:    { name:'Stone Wall',     cost:{stone:5},            hp:900,  size:1, age:1, los:1, time:8, icon:'🧱' },
 };
@@ -109,7 +112,7 @@ const TECHS = {
 };
 
 // Base gather rates: resource units per second (before tech multipliers)
-const GATHER_RATE = { wood:0.39, berry:0.35, farm:0.45, gold:0.42, stone:0.39, hunt:0.45 };
+const GATHER_RATE = { wood:0.39, berry:0.35, farm:0.45, gold:0.42, stone:0.39, hunt:0.45, fish:0.5 };
 const BASE_CARRY = 10;
 const RES_KEYS = ['wood','food','gold','stone'];
 const RES_ICON = { wood:'🪵', food:'🍖', gold:'🪙', stone:'🪨' };
