@@ -450,7 +450,7 @@ function tick(dt) {
     const u = G.units[i];
     if (u.hp <= 0) {
       G.players[u.owner].pop -= UNITS[u.type].pop;
-      G.effects.push({ kind: 'die', x: u.x, y: u.y, t: 0.6, owner: u.owner });
+      G.effects.push({ kind: 'die', x: u.x, y: u.y, t: 5, owner: u.owner, mounted: UNITS[u.type].cls === 'cav' });
       G.units.splice(i, 1);
     }
   }

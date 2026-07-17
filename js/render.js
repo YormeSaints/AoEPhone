@@ -172,6 +172,50 @@ function foamSprite(dir) {
 }
 const FRINGE_DIRS = [[-1, 0], [0, -1], [1, 0], [0, 1]];
 
+// small decorative doodads scattered deterministically (no state, no saves)
+function doodadSprite(kind) {
+  return cached(`dd_${kind}`, 26, 22, (g, w, h) => {
+    const cx = w / 2, base = h - 4;
+    const rng = mulberry32(kind * 3301 + 5);
+    if (kind === 0) { // low shrub
+      g.fillStyle = 'rgba(15,20,10,0.18)';
+      g.beginPath(); g.ellipse(cx + 1, base + 1, 7, 2.6, 0, 0, 7); g.fill();
+      g.fillStyle = '#3a6b33';
+      g.beginPath(); g.ellipse(cx, base - 3, 7, 4.5, 0, 0, 7); g.fill();
+      g.fillStyle = '#4f8a42';
+      g.beginPath(); g.ellipse(cx - 2, base - 4.5, 4, 2.6, 0, 0, 7); g.fill();
+    } else if (kind === 1) { // flower patch
+      for (let i = 0; i < 5; i++) {
+        const x = 4 + rng() * (w - 8), y = base - 2 - rng() * 6;
+        g.strokeStyle = 'rgba(50,90,40,0.8)'; g.lineWidth = 0.8;
+        g.beginPath(); g.moveTo(x, y + 3); g.lineTo(x, y); g.stroke();
+        g.fillStyle = ['#e8e094', '#e0b8d8', '#e8ecf2'][i % 3];
+        g.beginPath(); g.arc(x, y, 1.4, 0, 7); g.fill();
+        g.fillStyle = '#d8a24a'; g.beginPath(); g.arc(x, y, 0.5, 0, 7); g.fill();
+      }
+    } else if (kind === 2) { // small rocks
+      for (let i = 0; i < 3; i++) {
+        const x = 6 + rng() * (w - 12), y = base - 1 - rng() * 3, r = 1.6 + rng() * 2;
+        g.fillStyle = '#8d8d8d';
+        g.beginPath();
+        g.moveTo(x - r, y); g.lineTo(x - r * 0.3, y - r); g.lineTo(x + r * 0.6, y - r * 0.7); g.lineTo(x + r, y);
+        g.closePath(); g.fill();
+        g.fillStyle = '#a8a8a8';
+        g.beginPath(); g.moveTo(x - r * 0.3, y - r); g.lineTo(x + r * 0.1, y - r * 0.5); g.lineTo(x - r * 0.5, y - r * 0.4); g.closePath(); g.fill();
+      }
+    } else { // tall grass tuft
+      g.strokeStyle = 'rgba(60,110,45,0.9)'; g.lineWidth = 1;
+      for (let i = -3; i <= 3; i++) {
+        g.beginPath(); g.moveTo(cx, base);
+        g.quadraticCurveTo(cx + i * 1.6, base - 4, cx + i * 2.4, base - 7 - rng() * 3);
+        g.stroke();
+      }
+      g.strokeStyle = 'rgba(120,160,80,0.8)';
+      g.beginPath(); g.moveTo(cx, base); g.quadraticCurveTo(cx - 1, base - 5, cx - 2, base - 9); g.stroke();
+    }
+  });
+}
+
 // ---------- building sprites ----------
 function buildingSprite(type, owner, done) {
   const key = `b_${type}_${owner}_${done ? 1 : 0}`;
@@ -842,254 +886,560 @@ function resSprite(rtype, variant) {
   });
 }
 
-// ---------- unit drawing ----------
+// ---------- unit sprites ----------
+// Units are pre-rendered at high detail into cached sprites: one canvas per
+// (type, owner, animation frame), mirrored at draw time for facing. Frame 0
+// stands, frames 1-2 are the walk cycle. All sprites keep their feet /
+// waterline at cssHeight - 6.
+const OL = 'rgba(25,18,10,0.6)';
+
 function outlined(g, fillCol, drawShape) {
   drawShape();
   g.fillStyle = fillCol; g.fill();
-  g.strokeStyle = 'rgba(20,16,10,0.55)'; g.lineWidth = 0.8;
+  g.strokeStyle = OL; g.lineWidth = 0.8;
   g.stroke();
+}
+
+// -- humanoid rig: feet at (cx, feetY), ph in [-1, 1] is the walk phase --
+function rigHumanoid(g, cx, feetY, ph, c, gear) {
+  const H = c.H || 27;
+  const hipY = feetY - H * 0.44, shY = feetY - H * 0.74, headY = feetY - H * 0.88;
+  const headR = H * 0.145;
+  const legSwing = ph * H * 0.14, armSwing = -ph * H * 0.11;
+  g.lineCap = 'round';
+  const leg = (sign, col) => {
+    const fx = cx + sign * legSwing;
+    g.strokeStyle = col; g.lineWidth = H * 0.115;
+    g.beginPath();
+    g.moveTo(cx + sign * H * 0.05, hipY);
+    g.quadraticCurveTo(cx + sign * legSwing * 0.4, (hipY + feetY) / 2, fx, feetY - 1);
+    g.stroke();
+    g.fillStyle = c.boots || '#3f3226';
+    g.beginPath(); g.ellipse(fx + 0.8, feetY - 0.8, H * 0.085, H * 0.05, 0, 0, 7); g.fill();
+  };
+  const arm = (sign, col, holdX, holdY) => {
+    g.strokeStyle = col; g.lineWidth = H * 0.095;
+    g.beginPath();
+    g.moveTo(cx + sign * H * 0.16, shY + H * 0.04);
+    if (holdX !== undefined) g.quadraticCurveTo(cx + sign * H * 0.22, shY + H * 0.18, holdX, holdY);
+    else g.quadraticCurveTo(cx + sign * (H * 0.2 + armSwing * 0.3), shY + H * 0.2, cx + sign * H * 0.14 + armSwing, hipY + H * 0.06);
+    g.stroke();
+  };
+  // far leg (shaded), far arm behind torso
+  leg(-1, shade(c.legs, -18));
+  if (gear.backItem) gear.backItem(g, cx, feetY, H, shY);
+  arm(-1, shade(c.sleeve || c.tunic, -20));
+  // near leg
+  leg(1, c.legs);
+  // torso: tapered tunic with cloth shading
+  g.beginPath();
+  g.moveTo(cx - H * 0.14, hipY + H * 0.02);
+  g.quadraticCurveTo(cx - H * 0.2, shY + H * 0.12, cx - H * 0.17, shY);
+  g.lineTo(cx + H * 0.17, shY);
+  g.quadraticCurveTo(cx + H * 0.2, shY + H * 0.12, cx + H * 0.14, hipY + H * 0.02);
+  g.closePath();
+  g.fillStyle = c.tunic; g.fill();
+  g.strokeStyle = OL; g.lineWidth = 0.8; g.stroke();
+  // shade right, highlight left
+  g.save(); g.clip();
+  g.fillStyle = 'rgba(0,0,0,0.18)';
+  g.fillRect(cx + H * 0.03, shY - 2, H * 0.2, H * 0.4);
+  g.fillStyle = 'rgba(255,255,255,0.16)';
+  g.fillRect(cx - H * 0.17, shY, H * 0.09, H * 0.34);
+  if (c.tabard) { // team-color tabard stripe
+    g.fillStyle = c.tabard;
+    g.fillRect(cx - H * 0.06, shY, H * 0.12, H * 0.34);
+    g.fillStyle = 'rgba(0,0,0,0.15)';
+    g.fillRect(cx + 0, shY, H * 0.06, H * 0.34);
+  }
+  g.restore();
+  // belt
+  g.strokeStyle = '#4a3826'; g.lineWidth = H * 0.05;
+  g.beginPath(); g.moveTo(cx - H * 0.145, hipY); g.lineTo(cx + H * 0.145, hipY); g.stroke();
+  g.fillStyle = '#c9b46a'; g.fillRect(cx - H * 0.03, hipY - H * 0.03, H * 0.06, H * 0.06);
+  // head
+  g.fillStyle = c.skin || '#e2b98f';
+  g.beginPath(); g.arc(cx, headY, headR, 0, 7); g.fill();
+  g.strokeStyle = OL; g.lineWidth = 0.7; g.stroke();
+  g.fillStyle = 'rgba(0,0,0,0.14)';
+  g.beginPath(); g.arc(cx + headR * 0.3, headY, headR, -0.9, 0.9); g.fill();
+  if (gear.head) gear.head(g, cx, headY, headR, H);
+  // near arm + hand item
+  const hold = gear.hold ? gear.hold(g, cx, feetY, H, shY, hipY) : undefined;
+  arm(1, c.sleeve || c.tunic, hold && hold[0], hold && hold[1]);
+  if (gear.frontItem) gear.frontItem(g, cx, feetY, H, shY, hipY);
+}
+function shade(hex, amt) {
+  // lighten/darken a #rrggbb color
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v) => Math.max(0, Math.min(255, v + amt));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+// -- horse rig for cavalry --
+function rigHorse(g, cx, feetY, ph, coat, teamCol, caparison) {
+  const bodyY = feetY - 11;
+  g.lineCap = 'round';
+  // legs: two pairs, opposite phase
+  for (const [dx, p] of [[-7, ph], [-3, -ph], [3.5, -ph], [7, ph]]) {
+    g.strokeStyle = shade(coat, -30); g.lineWidth = 2.2;
+    g.beginPath();
+    g.moveTo(cx + dx, bodyY + 2);
+    g.quadraticCurveTo(cx + dx + p * 1.5, bodyY + 6, cx + dx + p * 3.5, feetY - 0.5);
+    g.stroke();
+    g.fillStyle = '#2c2218';
+    g.beginPath(); g.ellipse(cx + dx + p * 3.5, feetY - 0.5, 1.7, 1.1, 0, 0, 7); g.fill();
+  }
+  // tail
+  g.strokeStyle = shade(coat, -40); g.lineWidth = 1.8;
+  g.beginPath(); g.moveTo(cx - 11, bodyY - 3); g.quadraticCurveTo(cx - 14, bodyY + 3, cx - 13, feetY - 4); g.stroke();
+  // body
+  outlined(g, coat, () => { g.beginPath(); g.ellipse(cx, bodyY - 2, 11, 5.5, 0, 0, 7); });
+  g.fillStyle = shade(coat, 22);
+  g.beginPath(); g.ellipse(cx - 3, bodyY - 4, 6, 2.6, 0, 0, 7); g.fill();
+  if (caparison) { // knight's team-colored cloth
+    g.fillStyle = teamCol;
+    g.beginPath(); g.ellipse(cx, bodyY - 1, 10, 5, 0, 0.15, Math.PI - 0.15); g.fill();
+    g.strokeStyle = shade(teamCol, -50); g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(cx - 9, bodyY + 2.4); g.lineTo(cx + 9, bodyY + 2.4); g.stroke();
+    // scalloped hem
+    g.fillStyle = teamCol;
+    for (let i = -3; i <= 3; i++) { g.beginPath(); g.arc(cx + i * 2.8, bodyY + 3.4, 1.4, 0, Math.PI); g.fill(); }
+  }
+  // neck + head
+  outlined(g, coat, () => {
+    g.beginPath();
+    g.moveTo(cx + 7, bodyY - 5);
+    g.quadraticCurveTo(cx + 12, bodyY - 11, cx + 14.5, bodyY - 10);
+    g.lineTo(cx + 16.5, bodyY - 6.5);
+    g.quadraticCurveTo(cx + 13, bodyY - 4.5, cx + 8, bodyY - 1);
+    g.closePath();
+  });
+  // muzzle, ear, eye, mane
+  g.fillStyle = shade(coat, -25);
+  g.beginPath(); g.ellipse(cx + 16, bodyY - 7.5, 1.8, 1.3, 0.4, 0, 7); g.fill();
+  g.strokeStyle = shade(coat, -40); g.lineWidth = 1.1;
+  g.beginPath(); g.moveTo(cx + 13.4, bodyY - 11); g.lineTo(cx + 14.2, bodyY - 13.2); g.stroke();
+  g.fillStyle = '#1c140c';
+  g.beginPath(); g.arc(cx + 13.6, bodyY - 9.2, 0.6, 0, 7); g.fill();
+  g.strokeStyle = shade(coat, -45); g.lineWidth = 1.4;
+  g.beginPath(); g.moveTo(cx + 8, bodyY - 6); g.quadraticCurveTo(cx + 11, bodyY - 9, cx + 13, bodyY - 11); g.stroke();
+}
+
+// -- per-type look: colors + gear drawn onto the humanoid rig --
+function unitLook(type, teamCol) {
+  const steel = '#b8c0ca', steelD = '#8f99a6', wood = '#8a6b40';
+  switch (type) {
+    case 'villager': return {
+      c: { tunic: '#b08a55', sleeve: '#b08a55', legs: '#6e5a43', tabard: teamCol, H: 26 },
+      gear: {
+        head: (g, cx, hy, hr) => { // straw hat
+          g.fillStyle = '#c9a76b';
+          g.beginPath(); g.ellipse(cx, hy - hr * 0.5, hr * 1.7, hr * 0.55, 0, 0, 7); g.fill();
+          g.strokeStyle = OL; g.lineWidth = 0.6; g.stroke();
+          g.fillStyle = '#b08f56';
+          g.beginPath(); g.arc(cx, hy - hr * 0.7, hr * 0.85, Math.PI, 0); g.fill();
+        },
+      },
+    };
+    case 'militia': return {
+      c: { tunic: '#9aa3ad', sleeve: '#8a7355', legs: '#5c4a38', tabard: teamCol, H: 27 },
+      gear: {
+        head: (g, cx, hy, hr) => { // iron cap with nose guard
+          g.fillStyle = steel;
+          g.beginPath(); g.arc(cx, hy - hr * 0.25, hr * 1.05, Math.PI, 0); g.fill();
+          g.strokeStyle = OL; g.lineWidth = 0.6; g.stroke();
+          g.fillStyle = steelD; g.fillRect(cx - 0.7, hy - hr * 0.3, 1.4, hr * 1.1);
+        },
+        backItem: (g, cx, fy, H, shY) => { // round shield slung on far side
+          g.fillStyle = teamCol;
+          g.beginPath(); g.arc(cx - H * 0.26, shY + H * 0.16, H * 0.15, 0, 7); g.fill();
+          g.strokeStyle = '#e0d8c0'; g.lineWidth = 1; g.stroke();
+          g.fillStyle = '#e0d8c0'; g.beginPath(); g.arc(cx - H * 0.26, shY + H * 0.16, H * 0.045, 0, 7); g.fill();
+        },
+        hold: (g, cx, fy, H, shY) => {
+          const hx = cx + H * 0.3, hy2 = shY + H * 0.2;
+          g.strokeStyle = '#d9dee4'; g.lineWidth = 1.7;
+          g.beginPath(); g.moveTo(hx, hy2 + 1); g.lineTo(hx + H * 0.14, hy2 - H * 0.38); g.stroke();
+          g.strokeStyle = '#e8eef4'; g.lineWidth = 0.7;
+          g.beginPath(); g.moveTo(hx + 1, hy2); g.lineTo(hx + H * 0.14 + 1, hy2 - H * 0.36); g.stroke();
+          g.strokeStyle = wood; g.lineWidth = 1.4;
+          g.beginPath(); g.moveTo(hx - 2.2, hy2 + 1.6); g.lineTo(hx + 2.2, hy2 + 3); g.stroke();
+          return [hx, hy2];
+        },
+      },
+    };
+    case 'guard': return {
+      c: { tunic: '#b8c0ca', sleeve: '#8f99a6', legs: '#4c545e', tabard: teamCol, H: 28 },
+      gear: {
+        head: (g, cx, hy, hr) => { // great helm with plume
+          g.fillStyle = steel;
+          g.fillRect(cx - hr, hy - hr * 1.05, hr * 2, hr * 1.7);
+          g.strokeStyle = OL; g.lineWidth = 0.6; g.strokeRect(cx - hr, hy - hr * 1.05, hr * 2, hr * 1.7);
+          g.fillStyle = '#2a2f36'; g.fillRect(cx - hr * 0.7, hy - hr * 0.25, hr * 1.4, hr * 0.3);
+          g.fillStyle = teamCol;
+          g.beginPath(); g.arc(cx, hy - hr * 1.4, hr * 0.4, 0, 7); g.fill();
+          g.beginPath(); g.ellipse(cx - hr * 0.55, hy - hr * 1.35, hr * 0.55, hr * 0.28, -0.5, 0, 7); g.fill();
+        },
+        backItem: (g, cx, fy, H, shY) => { // tall kite shield
+          g.fillStyle = teamCol;
+          g.beginPath();
+          g.moveTo(cx - H * 0.32, shY + H * 0.02); g.lineTo(cx - H * 0.14, shY + H * 0.02);
+          g.lineTo(cx - H * 0.2, shY + H * 0.42); g.lineTo(cx - H * 0.28, shY + H * 0.42);
+          g.closePath(); g.fill();
+          g.strokeStyle = '#e0d8c0'; g.lineWidth = 1; g.stroke();
+        },
+        hold: (g, cx, fy, H, shY) => {
+          const hx = cx + H * 0.3, hy2 = shY + H * 0.18;
+          g.strokeStyle = '#d9dee4'; g.lineWidth = 2;
+          g.beginPath(); g.moveTo(hx, hy2 + 2); g.lineTo(hx + H * 0.1, hy2 - H * 0.45); g.stroke();
+          g.strokeStyle = wood; g.lineWidth = 1.6;
+          g.beginPath(); g.moveTo(hx - 2.6, hy2 + 2.4); g.lineTo(hx + 2.6, hy2 + 4); g.stroke();
+          return [hx, hy2 + 1];
+        },
+      },
+    };
+    case 'spearman': return {
+      c: { tunic: '#a89468', sleeve: '#a89468', legs: '#5c4a38', tabard: teamCol, H: 27 },
+      gear: {
+        head: (g, cx, hy, hr) => { // conical helm
+          g.fillStyle = steel;
+          g.beginPath(); g.moveTo(cx - hr, hy - hr * 0.2); g.quadraticCurveTo(cx, hy - hr * 2.2, cx + hr, hy - hr * 0.2); g.closePath(); g.fill();
+          g.strokeStyle = OL; g.lineWidth = 0.6; g.stroke();
+        },
+        backItem: (g, cx, fy, H, shY) => { // small kite shield
+          g.fillStyle = teamCol;
+          g.beginPath();
+          g.moveTo(cx - H * 0.3, shY + H * 0.06); g.lineTo(cx - H * 0.13, shY + H * 0.06);
+          g.lineTo(cx - H * 0.21, shY + H * 0.36); g.closePath(); g.fill();
+          g.strokeStyle = '#e0d8c0'; g.lineWidth = 0.9; g.stroke();
+        },
+        hold: (g, cx, fy, H, shY) => {
+          const hx = cx + H * 0.26, hy2 = shY + H * 0.22;
+          g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.5;
+          g.beginPath(); g.moveTo(hx - H * 0.1, fy - 2); g.lineTo(hx + H * 0.16, shY - H * 0.5); g.stroke();
+          g.fillStyle = '#d3d9df';
+          const tx = hx + H * 0.16, ty = shY - H * 0.5;
+          g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx + 2.6, ty - 5.4); g.lineTo(tx - 1.6, ty - 1.6); g.closePath(); g.fill();
+          g.strokeStyle = OL; g.lineWidth = 0.5; g.stroke();
+          return [hx, hy2];
+        },
+      },
+    };
+    case 'archer': return {
+      c: { tunic: '#5c6e3c', sleeve: '#4e5c34', legs: '#4a3f2e', tabard: teamCol, H: 26 },
+      gear: {
+        head: (g, cx, hy, hr) => { // hood
+          g.fillStyle = '#48562f';
+          g.beginPath(); g.arc(cx, hy - hr * 0.15, hr * 1.15, Math.PI * 0.9, Math.PI * 2.1); g.fill();
+          g.beginPath(); g.moveTo(cx - hr, hy); g.quadraticCurveTo(cx - hr * 1.6, hy + hr, cx - hr * 0.6, hy + hr * 1.4); g.lineTo(cx, hy + hr * 0.4); g.closePath(); g.fill();
+        },
+        backItem: (g, cx, fy, H, shY) => { // quiver with arrow fletchings
+          g.fillStyle = '#6b4a2a';
+          g.save(); g.translate(cx - H * 0.22, shY + H * 0.12); g.rotate(0.35);
+          g.fillRect(-H * 0.05, -H * 0.16, H * 0.1, H * 0.3);
+          g.fillStyle = '#e8e0c8';
+          for (const dx of [-1.2, 0.6]) { g.beginPath(); g.arc(dx, -H * 0.18, 1.1, 0, 7); g.fill(); }
+          g.restore();
+        },
+        hold: (g, cx, fy, H, shY) => {
+          const hx = cx + H * 0.32, hy2 = shY + H * 0.14;
+          g.strokeStyle = wood; g.lineWidth = 1.4;
+          g.beginPath(); g.arc(hx, hy2, H * 0.24, -1.25, 1.25); g.stroke();
+          g.strokeStyle = 'rgba(235,230,215,0.85)'; g.lineWidth = 0.6;
+          g.beginPath();
+          g.moveTo(hx + Math.cos(-1.25) * H * 0.24, hy2 + Math.sin(-1.25) * H * 0.24);
+          g.lineTo(hx + Math.cos(1.25) * H * 0.24, hy2 + Math.sin(1.25) * H * 0.24);
+          g.stroke();
+          return [hx, hy2];
+        },
+      },
+    };
+    case 'skirmisher': return {
+      c: { tunic: '#8a6f4d', sleeve: '#8a6f4d', legs: '#5c4a38', tabard: teamCol, H: 26 },
+      gear: {
+        head: (g, cx, hy, hr) => { // leather cap
+          g.fillStyle = '#6e553a';
+          g.beginPath(); g.arc(cx, hy - hr * 0.3, hr * 1.02, Math.PI, 0); g.fill();
+          g.strokeStyle = OL; g.lineWidth = 0.5; g.stroke();
+        },
+        backItem: (g, cx, fy, H, shY) => { // buckler
+          g.fillStyle = '#8f99a6';
+          g.beginPath(); g.arc(cx - H * 0.25, shY + H * 0.16, H * 0.11, 0, 7); g.fill();
+          g.strokeStyle = OL; g.lineWidth = 0.7; g.stroke();
+        },
+        hold: (g, cx, fy, H, shY) => {
+          const hx = cx + H * 0.28, hy2 = shY + H * 0.16;
+          g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.2;
+          g.beginPath(); g.moveTo(hx - H * 0.06, hy2 + H * 0.3); g.lineTo(hx + H * 0.2, hy2 - H * 0.42); g.stroke();
+          g.fillStyle = '#d3d9df';
+          const tx = hx + H * 0.2, ty = hy2 - H * 0.42;
+          g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx + 1.8, ty - 3.6); g.lineTo(tx - 1.2, ty - 1); g.closePath(); g.fill();
+          return [hx, hy2];
+        },
+      },
+    };
+    case 'monk': return {
+      c: { tunic: '#5c4c3a', sleeve: '#5c4c3a', legs: '#4a3e30', boots: '#5c4c3a', tabard: teamCol, H: 26 },
+      gear: {
+        head: (g, cx, hy, hr) => { // tonsure + cowl on shoulders
+          g.fillStyle = '#7a6248';
+          g.beginPath(); g.arc(cx, hy - hr * 0.55, hr * 0.75, Math.PI * 1.05, Math.PI * 1.95); g.fill();
+          g.fillStyle = '#4a3e30';
+          g.beginPath(); g.ellipse(cx, hy + hr * 1.15, hr * 1.5, hr * 0.6, 0, Math.PI, 0); g.fill();
+        },
+        hold: (g, cx, fy, H, shY) => { // staff with golden top
+          const hx = cx + H * 0.28;
+          g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.5;
+          g.beginPath(); g.moveTo(hx, fy - 1); g.lineTo(hx, shY - H * 0.28); g.stroke();
+          g.fillStyle = '#ffd98c';
+          g.beginPath(); g.arc(hx, shY - H * 0.33, 1.9, 0, 7); g.fill();
+          g.strokeStyle = OL; g.lineWidth = 0.5; g.stroke();
+          return [hx, shY + H * 0.16];
+        },
+      },
+    };
+  }
+  return { c: { tunic: teamCol, legs: '#5c4a38', H: 26 }, gear: {} };
+}
+
+// bake one unit sprite. frame: 0 stand, 1-2 walk poses.
+function unitSprite(type, owner, frame) {
+  const key = `u_${type}_${owner}_${frame}`;
+  const d = UNITS[type];
+  const big = d.cls === 'cav' || d.cls === 'siege' || d.cls === 'ship';
+  const w = big ? 64 : 44, h = big ? 62 : 54;
+  return cached(key, w, h, (g) => {
+    const teamCol = G ? G.players[owner].color : '#888';
+    const cx = w / 2, fy = h - 6;
+    const ph = frame === 0 ? 0 : frame === 1 ? 1 : -1;
+    if (d.cls === 'cav') {
+      rigHorse(g, cx, fy, ph, type === 'scout' ? '#a3814f' : '#4e4036', teamCol, type !== 'scout');
+      // rider
+      const ry = fy - 15;
+      const look = type === 'scout'
+        ? { c: { tunic: '#8a6f4d', sleeve: '#8a6f4d', legs: '#5c4a38', tabard: teamCol, H: 17 }, gear: {} }
+        : { c: { tunic: '#b8c0ca', sleeve: '#8f99a6', legs: '#4c545e', tabard: teamCol, H: 18 }, gear: {} };
+      rigHumanoid(g, cx - 1, ry, 0, look.c, look.gear);
+      if (type !== 'scout') {
+        // upright lance + kite shield
+        g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.4;
+        g.beginPath(); g.moveTo(cx + 6, fy - 8); g.lineTo(cx + 9, fy - 38); g.stroke();
+        g.fillStyle = '#d3d9df';
+        g.beginPath(); g.moveTo(cx + 9, fy - 38); g.lineTo(cx + 10.6, fy - 43); g.lineTo(cx + 7.6, fy - 39.5); g.closePath(); g.fill();
+        g.fillStyle = teamCol;
+        g.beginPath();
+        g.moveTo(cx - 8, fy - 24); g.lineTo(cx - 2.5, fy - 24); g.lineTo(cx - 4.5, fy - 14); g.lineTo(cx - 7, fy - 15);
+        g.closePath(); g.fill();
+        g.strokeStyle = '#e0d8c0'; g.lineWidth = 0.9; g.stroke();
+      } else {
+        // scout's light spear
+        g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.2;
+        g.beginPath(); g.moveTo(cx + 5, fy - 10); g.lineTo(cx + 10, fy - 34); g.stroke();
+      }
+      return;
+    }
+    if (d.cls === 'siege') {
+      drawSiegeSprite(g, type, cx, fy, teamCol);
+      return;
+    }
+    if (d.cls === 'ship') {
+      drawShipSprite(g, type, cx, fy, teamCol);
+      return;
+    }
+    const look = unitLook(type, teamCol);
+    rigHumanoid(g, cx, fy, frame === 0 ? 0 : frame === 1 ? 1 : -1, look.c, look.gear);
+  });
+}
+
+function drawSiegeSprite(g, type, cx, fy, teamCol) {
+  const wood1 = '#7a5c36', wood2 = '#94744a', dark = '#54432a';
+  const plank = (x, y, w2, h2) => {
+    g.fillStyle = wood1; g.fillRect(x, y, w2, h2);
+    g.strokeStyle = 'rgba(40,28,14,0.5)'; g.lineWidth = 0.8; g.strokeRect(x, y, w2, h2);
+    for (let i = 1; i < 3; i++) { g.beginPath(); g.moveTo(x, y + h2 * i / 3); g.lineTo(x + w2, y + h2 * i / 3); g.stroke(); }
+  };
+  const wheel = (x, y, r) => {
+    g.fillStyle = '#4d4335'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    g.strokeStyle = '#2c2418'; g.lineWidth = 0.9; g.stroke();
+    g.strokeStyle = '#6e6250'; g.lineWidth = 0.8;
+    for (let a = 0; a < 4; a++) { g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a * 1.57) * r * 0.8, y + Math.sin(a * 1.57) * r * 0.8); g.stroke(); }
+  };
+  if (type === 'ram') {
+    // covered ram: peaked plank roof, swinging log with iron head
+    for (const wx of [-8, 0, 8]) wheel(cx + wx, fy - 2.5, 3.2);
+    plank(cx - 13, fy - 15, 26, 9);
+    g.fillStyle = wood2;
+    g.beginPath(); g.moveTo(cx - 14.5, fy - 15); g.lineTo(cx, fy - 22.5); g.lineTo(cx + 14.5, fy - 15); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(40,28,14,0.5)'; g.lineWidth = 0.9; g.stroke();
+    g.strokeStyle = 'rgba(60,42,22,0.6)'; g.lineWidth = 0.9;
+    g.beginPath(); g.moveTo(cx - 11, fy - 18); g.lineTo(cx + 11, fy - 18); g.stroke();
+    g.beginPath(); g.moveTo(cx - 7, fy - 20.4); g.lineTo(cx + 7, fy - 20.4); g.stroke();
+    // the log
+    g.strokeStyle = dark; g.lineWidth = 3.4; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(cx - 10, fy - 9); g.lineTo(cx + 14, fy - 9); g.stroke();
+    g.fillStyle = '#8f99a6';
+    g.beginPath(); g.arc(cx + 15, fy - 9, 2.4, 0, 7); g.fill();
+    g.strokeStyle = OL; g.lineWidth = 0.6; g.stroke();
+    g.fillStyle = teamCol; g.fillRect(cx - 3, fy - 25.5, 6, 3);
+  } else if (type === 'mangonel') {
+    for (const wx of [-8, 8]) wheel(cx + wx, fy - 3, 3.4);
+    plank(cx - 11, fy - 11, 22, 6);
+    // frame + torsion arm with bucket
+    g.strokeStyle = dark; g.lineWidth = 2.2;
+    g.beginPath(); g.moveTo(cx - 6, fy - 11); g.lineTo(cx - 2, fy - 20); g.lineTo(cx + 2, fy - 11); g.stroke();
+    g.lineWidth = 2.6;
+    g.beginPath(); g.moveTo(cx - 3, fy - 10); g.lineTo(cx + 9, fy - 24); g.stroke();
+    g.fillStyle = '#3f3524';
+    g.beginPath(); g.arc(cx + 9.5, fy - 24.5, 3.2, 0, 7); g.fill();
+    g.strokeStyle = OL; g.lineWidth = 0.6; g.stroke();
+    g.fillStyle = '#6a6a6a';
+    g.beginPath(); g.arc(cx + 9.5, fy - 25, 1.6, 0, 7); g.fill();
+    g.fillStyle = teamCol; g.fillRect(cx - 11, fy - 14, 4, 2.6);
+  } else { // trebuchet
+    plank(cx - 13, fy - 6, 26, 4.5);
+    g.strokeStyle = dark; g.lineWidth = 2.8; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(cx - 8, fy - 5); g.lineTo(cx, fy - 22); g.lineTo(cx + 8, fy - 5); g.stroke();
+    g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(cx - 4, fy - 5); g.lineTo(cx + 4, fy - 14); g.stroke();
+    // long arm + counterweight + sling
+    g.strokeStyle = '#6b563c'; g.lineWidth = 2.4;
+    g.beginPath(); g.moveTo(cx - 13, fy - 32); g.lineTo(cx + 8, fy - 16); g.stroke();
+    g.fillStyle = '#3f3524';
+    g.fillRect(cx + 5.5, fy - 19, 7, 7);
+    g.strokeStyle = OL; g.lineWidth = 0.7; g.strokeRect(cx + 5.5, fy - 19, 7, 7);
+    g.strokeStyle = '#a8987a'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(cx - 13, fy - 32); g.quadraticCurveTo(cx - 17, fy - 26, cx - 15.5, fy - 20); g.stroke();
+    g.fillStyle = '#6a6a6a';
+    g.beginPath(); g.arc(cx - 15.5, fy - 19, 1.8, 0, 7); g.fill();
+    g.fillStyle = teamCol; g.fillRect(cx - 13, fy - 9.5, 4, 2.8);
+  }
+}
+
+function drawShipSprite(g, type, cx, wl, teamCol) {
+  // wl = waterline
+  const hull = '#7a5c36', hullLit = '#94744a';
+  // hull with bow/stern posts and planking
+  g.beginPath();
+  g.moveTo(cx - 15, wl - 5);
+  g.quadraticCurveTo(cx, wl + 4, cx + 15, wl - 5);
+  g.lineTo(cx + 12, wl - 10);
+  g.lineTo(cx - 12, wl - 10);
+  g.closePath();
+  g.fillStyle = hull; g.fill();
+  g.strokeStyle = OL; g.lineWidth = 0.9; g.stroke();
+  g.strokeStyle = 'rgba(50,34,16,0.55)'; g.lineWidth = 0.8;
+  g.beginPath(); g.moveTo(cx - 13, wl - 7.4); g.lineTo(cx + 13, wl - 7.4); g.stroke();
+  g.fillStyle = hullLit; g.fillRect(cx - 12, wl - 11.4, 24, 2);
+  // stern + bow posts
+  g.strokeStyle = hull; g.lineWidth = 2.4; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(cx - 14, wl - 6); g.quadraticCurveTo(cx - 17, wl - 10, cx - 16, wl - 15); g.stroke();
+  g.beginPath(); g.moveTo(cx + 14, wl - 6); g.quadraticCurveTo(cx + 17, wl - 10, cx + 16, wl - 15); g.stroke();
+  // mast
+  g.strokeStyle = '#54432a'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(cx, wl - 10); g.lineTo(cx, wl - 36); g.stroke();
+  if (type === 'wargalley') {
+    // shield row on the gunwale
+    for (let i = -2; i <= 2; i++) {
+      g.fillStyle = i % 2 ? '#8f99a6' : teamCol;
+      g.beginPath(); g.arc(cx + i * 5, wl - 11, 2.4, 0, 7); g.fill();
+      g.strokeStyle = OL; g.lineWidth = 0.5; g.stroke();
+    }
+    // square sail with team emblem
+    g.fillStyle = '#eae4d4';
+    g.beginPath();
+    g.moveTo(cx - 10, wl - 34); g.lineTo(cx + 10, wl - 34);
+    g.quadraticCurveTo(cx + 12, wl - 25, cx + 10, wl - 17);
+    g.lineTo(cx - 10, wl - 17);
+    g.quadraticCurveTo(cx - 8, wl - 25, cx - 10, wl - 34);
+    g.closePath(); g.fill();
+    g.strokeStyle = OL; g.lineWidth = 0.8; g.stroke();
+    g.fillStyle = 'rgba(0,0,0,0.08)';
+    g.fillRect(cx + 2, wl - 33, 8, 15);
+    g.fillStyle = teamCol;
+    g.beginPath(); g.arc(cx, wl - 25.5, 4, 0, 7); g.fill();
+    // yard
+    g.strokeStyle = '#54432a'; g.lineWidth = 1.4;
+    g.beginPath(); g.moveTo(cx - 11, wl - 34); g.lineTo(cx + 11, wl - 34); g.stroke();
+    // oars
+    g.strokeStyle = 'rgba(122,92,54,0.9)'; g.lineWidth = 1;
+    for (const dx of [-8, -2, 4]) {
+      g.beginPath(); g.moveTo(cx + dx, wl - 6); g.lineTo(cx + dx - 4, wl + 2); g.stroke();
+    }
+  } else {
+    // fishing ship: small team-colored lateen sail + nets
+    g.fillStyle = teamCol;
+    g.beginPath();
+    g.moveTo(cx, wl - 34);
+    g.quadraticCurveTo(cx + 11, wl - 27, cx + 9, wl - 17);
+    g.lineTo(cx, wl - 15);
+    g.closePath(); g.fill();
+    g.strokeStyle = OL; g.lineWidth = 0.8; g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.18)';
+    g.beginPath(); g.moveTo(cx + 1, wl - 31); g.quadraticCurveTo(cx + 7, wl - 26, cx + 6, wl - 18); g.lineTo(cx + 1, wl - 17); g.closePath(); g.fill();
+    // net over the side with cork floats
+    g.strokeStyle = 'rgba(230,228,216,0.75)'; g.lineWidth = 0.7;
+    for (let i = 0; i < 3; i++) {
+      g.beginPath(); g.moveTo(cx - 9 - i * 2, wl - 8 + i * 0.5); g.quadraticCurveTo(cx - 13 - i * 2, wl - 2, cx - 12 - i * 2, wl + 3); g.stroke();
+    }
+    g.fillStyle = '#c9a76b';
+    for (let i = 0; i < 3; i++) { g.beginPath(); g.arc(cx - 11 - i * 2, wl + 2 - i * 1.2, 1, 0, 7); g.fill(); }
+    // crates
+    g.fillStyle = '#8a6b40'; g.fillRect(cx + 4, wl - 14.5, 5, 4);
+    g.strokeStyle = OL; g.lineWidth = 0.5; g.strokeRect(cx + 4, wl - 14.5, 5, 4);
+  }
 }
 
 function drawUnit(g, u, px, py, z) {
   const d = UNITS[u.type];
   const col = G.players[u.owner].color;
-  const s = z; // scale
+  const s = z * 0.95;
   const moving = u.task !== 'idle' && u.moved;
-  const bob = moving ? Math.sin(G.time * 12 + u.id) * 1.2 * s : 0;
-  const faceL = Math.cos(u.dir) < 0 ? -1 : 1; // face left/right
-  // shadow
-  g.fillStyle = 'rgba(15,20,10,0.3)';
-  g.beginPath(); g.ellipse(px + 1, py + 0.5, 7 * s, 3 * s, 0, 0, 7); g.fill();
+  const working = d.cls === 'vill' && !moving && (u.task === 'gather' || u.task === 'build' || u.task === 'farm') && u.target;
+  const naval = d.cls === 'ship';
+  const bobW = naval ? Math.sin(G.time * 2.2 + u.id) * 1.2 * s : 0;
 
-  if (d.cls === 'ship') {
-    const bobW = Math.sin(G.time * 2.2 + u.id) * 1.2 * s;
-    // wake
+  // shadow / wake
+  if (naval) {
     g.strokeStyle = 'rgba(220,235,255,0.4)'; g.lineWidth = 1.2;
     g.beginPath(); g.ellipse(px, py + 1 * s + bobW, 13 * s, 4 * s, 0, 0, 7); g.stroke();
-    // hull with planking
-    outlined(g, '#7a5c36', () => {
-      g.beginPath();
-      g.moveTo(px - 11 * s, py - 4 * s + bobW);
-      g.quadraticCurveTo(px, py + 4 * s + bobW, px + 11 * s, py - 4 * s + bobW);
-      g.lineTo(px + 8 * s, py - 8 * s + bobW); g.lineTo(px - 8 * s, py - 8 * s + bobW);
-      g.closePath();
-    });
-    g.strokeStyle = 'rgba(60,42,22,0.5)'; g.lineWidth = 0.8;
-    g.beginPath(); g.moveTo(px - 9 * s, py - 6 * s + bobW); g.lineTo(px + 9 * s, py - 6 * s + bobW); g.stroke();
-    g.fillStyle = '#94744a';
-    g.fillRect(px - 8 * s, py - 9 * s + bobW, 16 * s, 2 * s);
-    // mast + sail
-    g.strokeStyle = '#54432a'; g.lineWidth = 1.8 * s;
-    g.beginPath(); g.moveTo(px, py - 8 * s + bobW); g.lineTo(px, py - 24 * s + bobW); g.stroke();
-    if (u.type === 'wargalley') {
-      outlined(g, '#eae4d4', () => {
-        g.beginPath(); g.moveTo(px, py - 23 * s + bobW);
-        g.quadraticCurveTo(px + 10 * s, py - 18 * s + bobW, px + 9 * s * 1, py - 13 * s + bobW);
-        g.lineTo(px, py - 11 * s + bobW); g.closePath();
-      });
-      g.fillStyle = col;
-      g.fillRect(px + 1 * s, py - 19 * s + bobW, 6 * s, 2.4 * s);
-      g.fillStyle = col;
-      g.beginPath(); g.moveTo(px, py - 24 * s + bobW); g.lineTo(px + 6 * s, py - 22.5 * s + bobW); g.lineTo(px, py - 21 * s + bobW); g.closePath(); g.fill();
-    } else {
-      outlined(g, col, () => {
-        g.beginPath(); g.moveTo(px, py - 22 * s + bobW);
-        g.quadraticCurveTo(px + 8 * s, py - 17 * s + bobW, px + 7 * s, py - 13 * s + bobW);
-        g.lineTo(px, py - 12 * s + bobW); g.closePath();
-      });
-      g.strokeStyle = 'rgba(230,228,216,0.7)'; g.lineWidth = 1 * s;
-      g.beginPath(); g.moveTo(px - 8 * s, py - 6 * s + bobW); g.lineTo(px - 13 * s, py + 1 * s + bobW); g.stroke();
-    }
-    return;
+  } else {
+    g.fillStyle = 'rgba(15,20,10,0.3)';
+    g.beginPath(); g.ellipse(px + 1, py + 0.5, 7.5 * s, 3.2 * s, 0, 0, 7); g.fill();
   }
 
-  if (d.cls === 'monk') {
-    outlined(g, '#4a3f33', () => {
-      g.beginPath();
-      g.moveTo(px - 5 * s, py); g.lineTo(px - 3.5 * s, py - 13 * s + bob); g.lineTo(px + 3.5 * s, py - 13 * s + bob); g.lineTo(px + 5 * s, py);
-      g.closePath();
-    });
-    g.fillStyle = 'rgba(255,255,255,0.1)';
-    g.beginPath(); g.moveTo(px - 4.5 * s, py); g.lineTo(px - 3.2 * s, py - 12 * s + bob); g.lineTo(px - 1 * s, py - 12 * s + bob); g.lineTo(px - 1.5 * s, py); g.closePath(); g.fill();
-    g.fillStyle = col;
-    g.fillRect(px - 4 * s, py - 8 * s + bob, 8 * s, 2.5 * s);
-    g.fillStyle = '#e8c39c';
-    g.beginPath(); g.arc(px, py - 15 * s + bob, 3 * s, 0, 7); g.fill();
-    g.fillStyle = '#4a3f33';
-    g.beginPath(); g.arc(px, py - 16 * s + bob, 3.2 * s, Math.PI * 1.05, Math.PI * 1.95); g.fill();
-    g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.6 * s;
-    g.beginPath(); g.moveTo(px + 5 * s * faceL, py); g.lineTo(px + 5 * s * faceL, py - 17 * s + bob); g.stroke();
-    g.fillStyle = '#ffd98c';
-    g.beginPath(); g.arc(px + 5 * s * faceL, py - 18 * s + bob, 1.8 * s, 0, 7); g.fill();
-    if (u.chant > 0) {
-      g.fillStyle = `rgba(255,230,140,${0.4 + 0.4 * Math.sin(G.time * 10)})`;
-      g.beginPath(); g.arc(px, py - 22 * s, 2.2 * s, 0, 7); g.fill();
-    }
-    return;
-  }
+  const frame = moving ? 1 + (((G.time * 8 + u.id) | 0) % 2) : 0;
+  const spr = unitSprite(u.type, u.owner, frame);
+  const w = spr.width / 2, h = spr.height / 2; // css units
+  const faceL = Math.cos(u.dir) < 0;
+  g.save();
+  g.translate(px, py + bobW);
+  if (faceL) g.scale(-1, 1);
+  g.drawImage(spr, -w / 2 * s, -(h - 6) * s, w * s, h * s);
+  g.restore();
 
-  if (d.cls === 'siege') {
-    if (u.type === 'trebuchet') {
-      g.fillStyle = '#6b5738';
-      g.fillRect(px - 11 * s, py - 5 * s, 22 * s, 4 * s);
-      g.strokeStyle = 'rgba(20,16,10,0.5)'; g.lineWidth = 0.8; g.strokeRect(px - 11 * s, py - 5 * s, 22 * s, 4 * s);
-      g.strokeStyle = '#54432a'; g.lineWidth = 2.6 * s;
-      g.beginPath(); g.moveTo(px - 7 * s, py - 3 * s); g.lineTo(px, py - 16 * s); g.lineTo(px + 7 * s, py - 3 * s); g.stroke();
-      g.lineWidth = 2.2 * s;
-      g.beginPath(); g.moveTo(px - 9 * s * faceL, py - 24 * s); g.lineTo(px + 6 * s * faceL, py - 12 * s); g.stroke();
-      g.fillStyle = '#3f3524';
-      g.fillRect(px + 4 * s * faceL - 3 * s, py - 13 * s, 6 * s, 6 * s);
-      g.strokeStyle = '#8a7a5a'; g.lineWidth = 1.2 * s;
-      g.beginPath(); g.moveTo(px - 9 * s * faceL, py - 24 * s); g.lineTo(px - 12 * s * faceL, py - 16 * s); g.stroke();
-      g.fillStyle = col; g.fillRect(px - 11 * s, py - 8 * s, 4 * s, 3 * s);
-      return;
-    }
-    if (u.type === 'ram') {
-      outlined(g, '#7a5c36', () => { g.beginPath(); g.rect(px - 10 * s, py - 12 * s + bob, 20 * s, 8 * s); });
-      g.fillStyle = '#94744a';
-      g.beginPath(); g.moveTo(px - 11 * s, py - 12 * s + bob); g.lineTo(px, py - 18 * s + bob); g.lineTo(px + 11 * s, py - 12 * s + bob); g.closePath(); g.fill();
-      g.strokeStyle = 'rgba(20,16,10,0.4)'; g.lineWidth = 0.8; g.stroke();
-      g.strokeStyle = 'rgba(60,42,22,0.6)'; g.lineWidth = 1;
-      g.beginPath(); g.moveTo(px - 9 * s, py - 15 * s + bob); g.lineTo(px + 9 * s, py - 15 * s + bob); g.stroke();
-      // ram head pokes out the front
-      g.fillStyle = '#54432a';
-      g.beginPath(); g.arc(px + 12 * s * faceL, py - 8 * s + bob, 2.2 * s, 0, 7); g.fill();
-      g.fillStyle = '#4d4335';
-      for (const dx of [-6, 0, 6]) { g.beginPath(); g.arc(px + dx * s, py - 3 * s, 2.6 * s, 0, 7); g.fill(); }
-      g.fillStyle = col; g.fillRect(px - 3 * s, py - 21 * s + bob, 6 * s, 3 * s);
-    } else { // mangonel
-      g.fillStyle = '#6b5738';
-      g.fillRect(px - 8 * s, py - 8 * s, 16 * s, 5 * s);
-      g.strokeStyle = 'rgba(20,16,10,0.5)'; g.lineWidth = 0.8; g.strokeRect(px - 8 * s, py - 8 * s, 16 * s, 5 * s);
-      g.strokeStyle = '#54432a'; g.lineWidth = 2.4 * s;
-      g.beginPath(); g.moveTo(px - 4 * s * faceL, py - 7 * s); g.lineTo(px + 5 * s * faceL, py - 18 * s); g.stroke();
-      g.fillStyle = '#3f3524'; g.beginPath(); g.arc(px + 5 * s * faceL, py - 18 * s, 3 * s, 0, 7); g.fill();
-      g.fillStyle = '#4d4335';
-      for (const dx of [-6, 6]) { g.beginPath(); g.arc(px + dx * s, py - 3 * s, 2.8 * s, 0, 7); g.fill(); }
-      g.fillStyle = col; g.fillRect(px - 8 * s, py - 10 * s, 4 * s, 3 * s);
-    }
-    return;
-  }
-
-  const mounted = d.cls === 'cav';
-  if (mounted) {
-    const hcol = u.type === 'scout' ? '#8a6b47' : '#5c4a3a';
-    const hlit = u.type === 'scout' ? '#a3814f' : '#6e5a48';
-    // legs animated
-    g.strokeStyle = '#42332a'; g.lineWidth = 1.7 * s;
-    for (const dx of [-6, -2, 2, 6]) {
-      const lp = moving ? Math.sin(G.time * 14 + dx) * 2.2 * s : 0;
-      g.beginPath(); g.moveTo(px + dx * s, py - 5 * s); g.lineTo(px + dx * s + lp, py); g.stroke();
-    }
-    // body + neck + head + tail
-    outlined(g, hcol, () => { g.beginPath(); g.ellipse(px, py - 7 * s + bob * 0.5, 9 * s, 4.5 * s, 0, 0, 7); });
-    g.fillStyle = hlit;
-    g.beginPath(); g.ellipse(px - 2 * s, py - 8.5 * s + bob * 0.5, 5 * s, 2.4 * s, 0, 0, 7); g.fill();
-    outlined(g, hcol, () => {
-      g.beginPath();
-      g.moveTo(px + 6 * s * faceL, py - 9 * s + bob * 0.5);
-      g.quadraticCurveTo(px + 10 * s * faceL, py - 13 * s + bob * 0.5, px + 11 * s * faceL, py - 11 * s + bob * 0.5);
-      g.lineTo(px + 12 * s * faceL, py - 8.5 * s + bob * 0.5);
-      g.quadraticCurveTo(px + 9 * s * faceL, py - 7.5 * s + bob * 0.5, px + 6 * s * faceL, py - 6.5 * s + bob * 0.5);
-      g.closePath();
-    });
-    // ear + tail
-    g.strokeStyle = '#42332a'; g.lineWidth = 1.1 * s;
-    g.beginPath(); g.moveTo(px + 10.4 * s * faceL, py - 13 * s + bob * 0.5); g.lineTo(px + 11.2 * s * faceL, py - 14.6 * s + bob * 0.5); g.stroke();
-    g.beginPath(); g.moveTo(px - 9 * s * faceL, py - 8 * s + bob * 0.5);
-    g.quadraticCurveTo(px - 12 * s * faceL, py - 5 * s + bob * 0.5, px - 11 * s * faceL, py - 1 * s); g.stroke();
-    // caparison in team color for knights
-    if (u.type !== 'scout') {
-      g.fillStyle = col;
-      g.beginPath(); g.ellipse(px, py - 6.5 * s + bob * 0.5, 8 * s, 3.4 * s, 0, 0, Math.PI); g.fill();
-    }
-  }
-  const by = mounted ? py - 12 * s + bob * 0.5 : py + bob;
-  if (!mounted) {
-    // walking legs
-    g.strokeStyle = 'rgba(35,28,20,0.9)'; g.lineWidth = 2 * s;
-    const lp = moving ? Math.sin(G.time * 13 + u.id) * 2.4 * s : 0;
-    g.beginPath(); g.moveTo(px - 1.5 * s, by - 3 * s); g.lineTo(px - 1.5 * s - lp, py); g.stroke();
-    g.beginPath(); g.moveTo(px + 1.5 * s, by - 3 * s); g.lineTo(px + 1.5 * s + lp, py); g.stroke();
-  }
-  // torso with outline + highlight
-  outlined(g, col, () => { g.beginPath(); g.ellipse(px, by - 7 * s, 4 * s, 5.5 * s, 0, 0, 7); });
-  g.fillStyle = 'rgba(255,255,255,0.22)';
-  g.beginPath(); g.ellipse(px - 1.4 * s, by - 8.6 * s, 1.8 * s, 2.6 * s, -0.4, 0, 7); g.fill();
-  // arms hint
-  g.strokeStyle = 'rgba(20,16,10,0.35)'; g.lineWidth = 1 * s;
-  g.beginPath(); g.moveTo(px - 3.4 * s, by - 8 * s); g.lineTo(px - 4 * s, by - 4.5 * s); g.stroke();
-  // head
-  g.fillStyle = '#e8c39c';
-  g.beginPath(); g.arc(px, by - 14 * s, 3 * s, 0, 7); g.fill();
-  g.strokeStyle = 'rgba(20,16,10,0.4)'; g.lineWidth = 0.7; g.stroke();
-  // headgear by class
-  if (d.cls === 'inf' || u.type === 'knight') {
-    g.fillStyle = '#c4cbd4';
-    g.beginPath(); g.arc(px, by - 15 * s, 3.1 * s, Math.PI, 0); g.fill();
-    g.fillStyle = '#8f99a6';
-    g.fillRect(px - 3.1 * s, by - 15 * s, 6.2 * s, 1 * s);
-    if (u.type === 'knight' || u.type === 'guard') { // plume
-      g.fillStyle = col;
-      g.beginPath(); g.arc(px, by - 17.6 * s, 1.2 * s, 0, 7); g.fill();
-    }
-  } else if (d.cls === 'arch') {
-    g.fillStyle = '#5c6e3c';
-    g.beginPath(); g.arc(px, by - 15.5 * s, 3 * s, Math.PI, 0); g.fill();
-    g.fillStyle = '#48562f';
-    g.beginPath(); g.moveTo(px + 2.4 * s, by - 16 * s); g.lineTo(px + 5 * s, by - 17.5 * s); g.lineTo(px + 3 * s, by - 15 * s); g.closePath(); g.fill();
-  } else if (d.cls === 'vill') {
-    g.fillStyle = '#a3814f';
-    g.beginPath(); g.ellipse(px, by - 16 * s, 3.6 * s, 1.3 * s, 0, 0, 7); g.fill();
-    g.fillStyle = '#8a6b40';
-    g.beginPath(); g.arc(px, by - 16.4 * s, 1.8 * s, Math.PI, 0); g.fill();
-  } else if (u.type === 'scout') {
-    g.fillStyle = '#8a6b47';
-    g.beginPath(); g.arc(px, by - 15 * s, 3 * s, Math.PI, 0); g.fill();
-  }
-  // shield on off-hand for infantry
-  if (d.cls === 'inf' && u.type !== 'spearman') {
-    g.fillStyle = col;
-    g.beginPath(); g.arc(px - 4.6 * s * faceL, by - 7 * s, 2.8 * s, 0, 7); g.fill();
-    g.strokeStyle = '#e0d8c0'; g.lineWidth = 0.8; g.stroke();
-    g.fillStyle = '#e0d8c0'; g.beginPath(); g.arc(px - 4.6 * s * faceL, by - 7 * s, 0.9 * s, 0, 7); g.fill();
-  }
-  // weapon
-  const wx = px + 5 * s * faceL, wy = by - 8 * s;
-  if (u.type === 'militia' || u.type === 'guard' || u.type === 'knight') {
-    g.strokeStyle = '#d9dee4'; g.lineWidth = 1.6 * s;
-    g.beginPath(); g.moveTo(wx, wy + 2 * s); g.lineTo(wx + 4 * s * faceL, wy - 8 * s); g.stroke();
-    g.strokeStyle = '#8a6b40'; g.lineWidth = 1.2 * s;
-    g.beginPath(); g.moveTo(wx - 1.2 * s, wy + 0.5 * s); g.lineTo(wx + 1.6 * s, wy + 1.6 * s); g.stroke();
-  } else if (u.type === 'spearman') {
-    g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.3 * s;
-    g.beginPath(); g.moveTo(wx - 3 * s * faceL, wy + 6 * s); g.lineTo(wx + 4 * s * faceL, wy - 11 * s); g.stroke();
-    g.fillStyle = '#c9ced4';
-    g.beginPath(); g.moveTo(wx + 4 * s * faceL, wy - 11 * s); g.lineTo(wx + 5.6 * s * faceL, wy - 14.5 * s); g.lineTo(wx + 2.5 * s * faceL, wy - 12.4 * s); g.closePath(); g.fill();
-  } else if (d.cls === 'arch') {
-    g.strokeStyle = '#8a6b40'; g.lineWidth = 1.3 * s;
-    g.beginPath(); g.arc(wx, wy, 4.5 * s, u.dir - 1.2, u.dir + 1.2); g.stroke();
-    g.strokeStyle = 'rgba(230,225,210,0.8)'; g.lineWidth = 0.7 * s;
-    g.beginPath();
-    g.moveTo(wx + Math.cos(u.dir - 1.2) * 4.5 * s, wy + Math.sin(u.dir - 1.2) * 4.5 * s);
-    g.lineTo(wx + Math.cos(u.dir + 1.2) * 4.5 * s, wy + Math.sin(u.dir + 1.2) * 4.5 * s);
+  // dynamic overlays (drawn unmirrored)
+  const flip = faceL ? -1 : 1;
+  if (working) { // swinging tool
+    const H = 26 * s;
+    const wx = px + 7 * s * flip, wy = py - 14 * s;
+    const swing = Math.sin(G.time * 9 + u.id) * 0.9;
+    g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.3 * s; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(wx - 2 * s * flip, wy + 5 * s);
+    g.lineTo(wx + Math.cos(swing) * 7 * s * flip, wy - Math.abs(Math.sin(swing)) * 8 * s);
     g.stroke();
-    // quiver
-    g.fillStyle = '#6b4a2a';
-    g.fillRect(px - 4.5 * s * faceL - 1 * s, by - 11 * s, 2 * s, 4.5 * s);
-  } else if (d.cls === 'vill' && (u.task === 'gather' || u.task === 'build' || u.task === 'farm')) {
-    g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.3 * s;
-    const swing = Math.sin(G.time * 9 + u.id) * 0.8;
-    g.beginPath(); g.moveTo(wx, wy + 2 * s); g.lineTo(wx + Math.cos(swing) * 6 * s * faceL, wy - Math.abs(Math.sin(swing)) * 7 * s); g.stroke();
     g.fillStyle = '#c9ced4';
-    g.beginPath(); g.arc(wx + Math.cos(swing) * 6 * s * faceL, wy - Math.abs(Math.sin(swing)) * 7 * s, 1.4 * s, 0, 7); g.fill();
+    g.beginPath(); g.arc(wx + Math.cos(swing) * 7 * s * flip, wy - Math.abs(Math.sin(swing)) * 8 * s, 1.5 * s, 0, 7); g.fill();
   }
-  // carrying indicator
+  if (u.chant > 0 && d.cls === 'monk') {
+    g.fillStyle = `rgba(255,230,140,${0.4 + 0.4 * Math.sin(G.time * 10)})`;
+    g.beginPath(); g.arc(px, py - 26 * s, 2.2 * s, 0, 7); g.fill();
+  }
   if (u.carry >= 1) {
     g.fillStyle = { wood: '#9c7a4a', food: '#d0405e', gold: '#f0cf46', stone: '#a5a5a5' }[u.carryType] || '#fff';
-    g.fillRect(px - 2.5 * s, by - 3.5 * s, 5 * s, 3.5 * s);
+    g.fillRect(px - 6.5 * s * flip - 2 * s, py - 12 * s, 4.5 * s, 3.5 * s);
     g.strokeStyle = 'rgba(20,16,10,0.4)'; g.lineWidth = 0.6;
-    g.strokeRect(px - 2.5 * s, by - 3.5 * s, 5 * s, 3.5 * s);
+    g.strokeRect(px - 6.5 * s * flip - 2 * s, py - 12 * s, 4.5 * s, 3.5 * s);
   }
 }
 
@@ -1139,6 +1489,15 @@ function render() {
         if (nt === t) continue;
         if (detail && t !== T_WATER && TERRAIN_PRIO[nt] > myPrio) ctx.drawImage(fringeSprite(nt, dir), dx, dy, tw, th);
         if (t === T_WATER && nt !== T_WATER) ctx.drawImage(foamSprite(dir), dx, dy, tw, th);
+      }
+      // sparse decorative doodads on open land
+      if (detail && t !== T_WATER && !G.map.res[i] && !G.map.occ[i]) {
+        const hsh = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+        if (hsh % 19 === 0) {
+          const kind = (t === T_GRASS || t === T_GRASS2) ? (hsh >> 4) % 4 : 2;
+          const dd = doodadSprite(kind);
+          ctx.drawImage(dd, px - dd.width / 4 * z, py - dd.height / 2 * z + 3 * z, dd.width / 2 * z, dd.height / 2 * z);
+        }
       }
       if (!G.visible[i]) {
         ctx.fillStyle = 'rgba(8,10,16,0.45)';
@@ -1286,8 +1645,25 @@ function drawEffect(fx, z) {
     ctx.fillStyle = `rgba(90,80,70,${fx.t / 0.4 * 0.5})`;
     ctx.beginPath(); ctx.arc(px - 4 * z, py - 6 * z, (0.5 - fx.t) * 30 * z, 0, 7); ctx.fill();
   } else if (fx.kind === 'die') {
-    ctx.fillStyle = `rgba(60,30,20,${fx.t})`;
-    ctx.beginPath(); ctx.ellipse(px, py, 8 * z * (1 - fx.t * 0.5), 4 * z * (1 - fx.t * 0.5), 0, 0, 7); ctx.fill();
+    // fallen soldier: fades away over a few seconds
+    const a = Math.min(0.9, fx.t / 2.5);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(90,30,25,0.5)';
+    ctx.beginPath(); ctx.ellipse(px, py + 1, 8 * z, 3.4 * z, 0, 0, 7); ctx.fill();
+    const col = G.players[fx.owner] ? G.players[fx.owner].color : '#888';
+    // body lying sideways
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.ellipse(px + 1 * z, py - 1.5 * z, 5.5 * z, 2.2 * z, 0.12, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(25,18,10,0.5)'; ctx.lineWidth = 0.7; ctx.stroke();
+    ctx.fillStyle = '#e2b98f';
+    ctx.beginPath(); ctx.arc(px - 5.5 * z, py - 2.4 * z, 1.9 * z, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(60,45,30,0.8)'; ctx.lineWidth = 1.4 * z;
+    ctx.beginPath(); ctx.moveTo(px + 5.5 * z, py - 1 * z); ctx.lineTo(px + 8.5 * z, py + 0.5 * z); ctx.stroke();
+    if (fx.mounted) { // fallen horse silhouette
+      ctx.fillStyle = 'rgba(70,58,46,0.85)';
+      ctx.beginPath(); ctx.ellipse(px + 3 * z, py + 1.5 * z, 8 * z, 3 * z, -0.08, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   } else if (fx.kind === 'convert') {
     ctx.strokeStyle = `rgba(255,220,120,${fx.t})`;
     ctx.lineWidth = 2.5;
