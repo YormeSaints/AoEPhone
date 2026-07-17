@@ -178,7 +178,15 @@ function handleTap(px, py, now) {
   }
 
   if (hit && hit.owner === 0 && (hit.kind === 'unit' || hit.kind === 'bldg')) {
-    // if military selected and tapping own building — treat as select (no friendly commands needed)
+    // villagers selected + own worksite (foundation, damaged building, farm):
+    // issue the work order rather than switching selection
+    const vills = myUnitsSelected.filter(u => UNITS[u.type].cls === 'vill');
+    if (vills.length && hit.kind === 'bldg' &&
+        (!hit.done || hit.hp < hit.maxhp || (hit.type === 'farm' && hit.done))) {
+      const [wx, wy] = screenToWorld(px, py);
+      issueCommand(myUnitsSelected, hit, wx, wy);
+      return;
+    }
     UI.setSelection([hit]);
     sfx('click');
     return;

@@ -36,8 +36,7 @@ function frame(t) {
     if (uiRefreshT <= 0) {
       uiRefreshT = 0.25;
       updateTopBar();
-      // live-refresh panel for queues/hp
-      if (UI.selection.length || UI.placing) refreshPanel();
+      refreshPanelLive(); // updates info text; rebuilds buttons only on change
     }
   }
 }

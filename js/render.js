@@ -613,9 +613,12 @@ function drawHpBar(px, py, w, frac, color) {
 function drawEffect(fx, z) {
   const [px, py] = worldToScreen(fx.x, fx.y);
   if (fx.kind === 'hit') {
-    ctx.strokeStyle = `rgba(255,240,180,${fx.t / 0.18})`; ctx.lineWidth = 2;
+    ctx.strokeStyle = fx.color || `rgba(255,240,180,${fx.t / 0.18})`;
+    ctx.globalAlpha = Math.min(1, fx.t / 0.18);
+    ctx.lineWidth = 2;
     const r = (0.2 - fx.t) * 60 * z;
     ctx.beginPath(); ctx.arc(px, py - 8 * z, Math.max(1, r), 0, 7); ctx.stroke();
+    ctx.globalAlpha = 1;
   } else if (fx.kind === 'boom') {
     ctx.fillStyle = `rgba(255,${140 + fx.t * 200 | 0},60,${fx.t / 0.4 * 0.8})`;
     ctx.beginPath(); ctx.arc(px, py, (0.5 - fx.t) * 50 * z, 0, 7); ctx.fill();

@@ -40,7 +40,26 @@ function updateTopBar() {
 }
 
 // ---------- selection / command panel ----------
-function refreshPanel() {
+let panelSig = '';
+function refreshPanel() { panelSig = ''; rebuildPanel(); }
+
+// Periodic refresh: only rebuild the button row when its content actually
+// changes, so the horizontal scroll position isn't reset mid-swipe.
+function refreshPanelLive() {
+  const sig = computePanelSig();
+  if (sig !== panelSig) { panelSig = sig; rebuildPanel(); }
+  else updatePanelInfo();
+}
+function computePanelSig() {
+  const sel = UI.selection.filter(alive);
+  const p = G.players[0];
+  const afford = RES_KEYS.map(k => Math.floor(p.res[k] / 25)).join(','); // coarse: re-check button affordability
+  return [sel.map(e => e.id).join('.'), UI.placing && UI.placing.type, UI.buildPage,
+          p.age, p.ageResearch ? 1 : 0, Object.keys(p.techs).length, Object.keys(p.researching).length,
+          sel.length === 1 && sel[0].queue ? sel[0].queue.length : '', afford].join('|');
+}
+
+function rebuildPanel() {
   const panel = $('panel-actions'), info = $('panel-info');
   panel.innerHTML = ''; info.innerHTML = '';
   const sel = UI.selection.filter(alive);
@@ -59,32 +78,31 @@ function refreshPanel() {
   const first = sel[0];
 
   if (first.kind === 'res') {
-    const names = { tree: 'Tree', gold: 'Gold Mine', stone: 'Stone Mine', berry: 'Berry Bush' };
-    info.innerHTML = `<div class="sel-name">${names[first.rtype]}</div><div class="sel-sub">${Math.ceil(first.amount)} ${RES_ICON[resGives(first)]} left</div>`;
+    info.innerHTML = resInfoHTML(first);
     return;
   }
 
   if (first.kind === 'unit') {
     const mine = first.owner === 0;
-    const count = sel.length;
-    const nm = count > 1 ? `${count} units` : unitName(first);
-    info.innerHTML = `<div class="sel-name">${mine ? '' : '🔴 '}${nm}</div>
-      <div class="sel-sub">${count === 1 ? `❤️${Math.ceil(first.hp)}/${first.maxhp} ⚔️${unitStat(first, 'atk')} 🛡${unitStat(first, 'armor')}/${unitStat(first, 'parmor')}` : ''}</div>`;
+    info.innerHTML = unitInfoHTML(sel);
     if (!mine) return;
     addBtn(panel, '✋', 'Stop', () => { for (const u of sel) { u.task = 'idle'; u.target = null; u.path = null; } sfx('click'); });
     const vills = sel.filter(u => u.kind === 'unit' && UNITS[u.type].cls === 'vill');
     if (vills.length) {
       const pages = [
-        ['house', 'mill', 'lumbercamp', 'miningcamp', 'farm', 'palisade'],
+        ['house', 'mill', 'lumbercamp', 'miningcamp', 'farm', 'palisade', 'towncenter'],
         ['barracks', 'archeryrange', 'stable', 'blacksmith', 'tower', 'siegeworkshop', 'castle'],
       ];
       addBtn(panel, UI.buildPage === 0 ? '🏠' : '⚔️', UI.buildPage === 0 ? 'Economy' : 'Military', () => {
         UI.buildPage = 1 - UI.buildPage; refreshPanel();
       }, 'page');
       const p = G.players[0];
+      const hasTC = G.buildings.some(b => b.owner === 0 && b.type === 'towncenter');
       for (const bt of pages[UI.buildPage]) {
         const d = BUILDINGS[bt];
         if (d.age > p.age) continue;
+        // additional Town Centers unlock in Castle Age; rebuilding is always allowed
+        if (bt === 'towncenter' && p.age < 2 && hasTC) continue;
         addBtn(panel, d.icon, `${d.name}\n${costText(d.cost)}`, () => startPlacing(bt), canAfford(p, d.cost) ? '' : 'nocash');
       }
     }
@@ -94,16 +112,14 @@ function refreshPanel() {
   // building
   const b = first, d = BUILDINGS[b.type], p = G.players[0];
   const mine = b.owner === 0;
-  info.innerHTML = `<div class="sel-name">${mine ? '' : '🔴 '}${d.name}</div>
-    <div class="sel-sub">❤️${Math.ceil(b.hp)}/${b.maxhp}${b.done ? '' : ' · building…'}${b.type === 'farm' && b.done ? ` · 🌾${Math.ceil(b.farmFood)}` : ''}</div>`;
-  if (!mine || !b.done) return;
-
-  // production queue display
-  if (b.queue.length) {
-    const q = b.queue[0];
-    const label = q.what === 'unit' ? UNITS[q.type].name : q.what === 'tech' ? TECHS[q.type].name : AGE_NAMES[q.type];
-    info.innerHTML += `<div class="queue-line">⏳ ${label} ${Math.floor(q.t / q.total * 100)}%${b.queue.length > 1 ? ` (+${b.queue.length - 1})` : ''}</div>`;
-  }
+  info.innerHTML = bldgInfoHTML(b);
+  if (!mine) return;
+  addBtn(panel, '✖️', 'Deselect', () => UI.setSelection([]));
+  if (b.type !== 'towncenter') addBtn(panel, '🗑', 'Demolish', () => {
+    if (!confirm(`Demolish this ${BUILDINGS[b.type].name}?`)) return;
+    destroyBuilding(b); UI.setSelection([]); sfx('boom');
+  });
+  if (!b.done) return;
 
   if (d.trains) for (const ut of d.trains) {
     const u = UNITS[ut];
@@ -128,6 +144,40 @@ function refreshPanel() {
     addBtn(panel, '⬆️', `${AGE_NAMES[p.age + 1]}\n${costText(cost)}${need > 0 ? `\nNeed ${need} more ${AGE_NAMES[p.age]} bldg` : ''}`,
       () => { if (startAgeUp(b)) sfx('click'); refreshPanel(); }, ok ? 'age' : 'age nocash');
   }
+}
+
+// ---------- selection info lines (rebuilt cheaply every UI tick) ----------
+function resInfoHTML(r) {
+  const names = { tree: 'Tree', gold: 'Gold Mine', stone: 'Stone Mine', berry: 'Berry Bush' };
+  return `<div class="sel-name">${names[r.rtype]}</div><div class="sel-sub">${Math.ceil(r.amount)} ${RES_ICON[resGives(r)]} left</div>`;
+}
+function unitInfoHTML(sel) {
+  const first = sel[0], mine = first.owner === 0, count = sel.length;
+  const nm = count > 1 ? `${count} units` : unitName(first);
+  return `<div class="sel-name">${mine ? '' : '🔴 '}${nm}</div>
+    <div class="sel-sub">${count === 1 ? `❤️${Math.ceil(first.hp)}/${first.maxhp} ⚔️${unitStat(first, 'atk')} 🛡${unitStat(first, 'armor')}/${unitStat(first, 'parmor')}` : ''}</div>`;
+}
+function bldgInfoHTML(b) {
+  const d = BUILDINGS[b.type], mine = b.owner === 0;
+  let html = `<div class="sel-name">${mine ? '' : '🔴 '}${d.name}</div>
+    <div class="sel-sub">❤️${Math.ceil(b.hp)}/${b.maxhp}${b.done ? '' : ' · building…'}${b.type === 'farm' && b.done ? ` · 🌾${Math.ceil(b.farmFood)}` : ''}</div>`;
+  if (mine && b.done && b.queue.length) {
+    const q = b.queue[0];
+    const label = q.what === 'unit' ? UNITS[q.type].name : q.what === 'tech' ? TECHS[q.type].name : AGE_NAMES[q.type];
+    html += `<div class="queue-line">⏳ ${label} ${Math.floor(q.t / q.total * 100)}%${b.queue.length > 1 ? ` (+${b.queue.length - 1})` : ''}</div>`;
+  }
+  return html;
+}
+function updatePanelInfo() {
+  if (!G) return;
+  const sel = UI.selection.filter(alive);
+  if (sel.length !== UI.selection.length) { UI.selection = sel; panelSig = ''; rebuildPanel(); return; }
+  if (UI.placing || !sel.length) return; // static text
+  const info = $('panel-info');
+  const first = sel[0];
+  if (first.kind === 'res') info.innerHTML = resInfoHTML(first);
+  else if (first.kind === 'unit') info.innerHTML = unitInfoHTML(sel);
+  else info.innerHTML = bldgInfoHTML(first);
 }
 
 function addBtn(parent, icon, label, fn, cls = '') {

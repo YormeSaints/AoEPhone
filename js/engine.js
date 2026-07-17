@@ -304,6 +304,7 @@ function cmdMove(u, x, y) {
 function cmdAttack(u, target) {
   if (UNITS[u.type].cls === 'vill' && target.kind === 'bldg' && target.owner === u.owner) return;
   u.task = 'attack'; u.target = target; u.path = null; u.repath = 0;
+  u.stuckT = 0; u.bestDist = Infinity;
 }
 function cmdGather(u, res) {
   if (UNITS[u.type].cls !== 'vill') { cmdMove(u, res.tx + 0.5, res.ty + 0.5); return; }
@@ -461,12 +462,12 @@ function updateBuilding(b, dt) {
       }
     }
   }
-  // tower / TC / castle attack
+  // tower / TC / castle attack (units only — don't waste arrows on buildings)
   if (b.done && d.atk) {
     b.cooldown -= dt;
     if (b.cooldown <= 0) {
       const cx = b.tx + b.size / 2, cy = b.ty + b.size / 2;
-      const t = nearestEnemy(b.owner, cx, cy, d.range + b.size / 2, null);
+      const t = nearestEnemy(b.owner, cx, cy, d.range + b.size / 2, 'unit');
       if (t) {
         fireProjectile(b.owner, cx, cy, t, d.atk, 0, 11);
         b.cooldown = d.rof;
@@ -573,7 +574,25 @@ function updateAttack(u, dt, d) {
     u.target = nt;
   }
   const range = Math.max(unitStat(u, 'range'), 0.6);
-  if (approach(u, u.target, range + (u.target.kind === 'bldg' ? 0.55 : 0.1), dt)) {
+  const inRange = approach(u, u.target, range + (u.target.kind === 'bldg' ? 0.55 : 0.1), dt);
+  // blocked (e.g. walled off): if we make no real progress toward the target
+  // for a few seconds, attack the nearest enemy structure — walls included
+  if (!inRange) {
+    const dNow = entDist(u, u.target);
+    if (dNow < (u.bestDist ?? Infinity) - 0.1) { u.bestDist = dNow; u.stuckT = 0; }
+    else u.stuckT = (u.stuckT || 0) + dt;
+    if (u.stuckT > 4) {
+      u.stuckT = 0; u.bestDist = Infinity;
+      let best = null, bd = 8;
+      for (const b of G.buildings) {
+        if (b.owner === u.owner || b.type === 'farm') continue;
+        const dd = Math.hypot(b.tx + b.size / 2 - u.x, b.ty + b.size / 2 - u.y) - b.size / 2;
+        if (dd < bd) { bd = dd; best = b; }
+      }
+      if (best && best !== u.target) { u.target = best; u.path = null; u.repath = 0; }
+    }
+  } else { u.stuckT = 0; u.bestDist = Infinity; }
+  if (inRange) {
     const [tx, ty] = entCenter(u.target);
     u.dir = Math.atan2(ty - u.y, tx - u.x);
     if (u.cooldown <= 0) {
@@ -617,10 +636,13 @@ function dealDamage(e, atk, bonus, melee, fromOwner) {
         } else cmdAttack(e, attacker);
       }
     }
-  } else if (e.owner === 0 && !e.underAttackPing || (e.underAttackPing || 0) < G.time - 15) {
+  } else if (e.owner === 0 && (!e.underAttackPing || e.underAttackPing < G.time - 15)) {
     e.underAttackPing = G.time;
     uiToast('⚠️ Your town is under attack!'); sfx('alarm');
   }
+  // let the owner's AI know where it was hit so it can respond
+  const op = G.players[e.owner];
+  if (op && op.isAI) { const c = entCenter(e); op.lastHit = { t: G.time, x: c[0], y: c[1] }; }
 }
 
 function autoAcquire(u) {

@@ -28,12 +28,29 @@ function aiUpdate(p, dt) {
   const hasDone = t => myBldgs.some(b => b.type === t && b.done);
   const underCon = myBldgs.filter(b => !b.done);
 
-  // difficulty: passive resource trickle so the AI keeps pace without cheating unit stats
-  const trickle = 0.7 * (cfg.eco - 0.7) * dt * 30; // per ai tick approximation
-  if (trickle > 0) for (const k of RES_KEYS) p.res[k] += trickle * 0.25;
+  // difficulty: passive resource trickle so the AI keeps pace without cheating
+  // unit stats. Fixed per AI tick (0.7s) so it is frame-rate independent.
+  const trickle = (cfg.eco - 0.7) * 0.75 * 0.7; // resources per tick, per type
+  if (trickle > 0) for (const k of RES_KEYS) p.res[k] += trickle;
 
   // --- villagers: train continuously ---
   if (tc && vills.length < AI_VILL_TARGET[p.age] && tc.queue.length < 2) trainUnit(tc, 'villager');
+
+  // --- rebuild the town center if it was destroyed ---
+  if (!tc && !underCon.some(b => b.type === 'towncenter') && myBldgs.length &&
+      canAfford(p, BUILDINGS.towncenter.cost)) {
+    aiBuild(p, 'towncenter', myBldgs[0]);
+  }
+
+  // --- defend: if the base was hit recently, rally nearby idle army ---
+  if (p.lastHit && G.time - p.lastHit.t < 6) {
+    for (const u of army) {
+      if (u.task !== 'idle') continue;
+      if (Math.hypot(u.x - p.lastHit.x, u.y - p.lastHit.y) > 24) continue;
+      const t = nearestEnemy(p.id, p.lastHit.x, p.lastHit.y, 10, null);
+      if (t) cmdAttack(u, t);
+    }
+  }
 
   // --- keep houses ahead of pop ---
   if (p.pop + 4 >= p.popCap && p.popCap < POP_MAX && !underCon.some(b => b.type === 'house') && p.res.wood >= 30) {
