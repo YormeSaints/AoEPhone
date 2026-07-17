@@ -21,26 +21,60 @@
   }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
 
-  /* ---- top bar ---- */
+  /* ---- top bar: dark wood beam with parchment resource chips ---- */
   #topbar {
     position: fixed; top: 0; left: 0; right: 0;
-    padding: calc(env(safe-area-inset-top, 0px) + 6px) 10px 6px;
-    display: flex; align-items: center; gap: 8px;
-    background: linear-gradient(#1d232bee, #1d232bcc 70%, transparent);
-    font-size: 13px; font-weight: 600; pointer-events: none;
+    padding: calc(env(safe-area-inset-top, 0px) + 5px) 10px 5px;
+    display: flex; align-items: center; gap: 7px;
+    background-image: var(--wood);
+    background-color: #4a3018;
+    border-bottom: 2px solid #2a1c0c;
+    box-shadow: 0 1px 0 #d8b45a66 inset, 0 -2px 0 #00000055 inset, 0 3px 8px rgba(0,0,0,0.5);
+    font-size: 13px; font-weight: 700; pointer-events: none;
     z-index: 10;
   }
-  #topbar .res { display: flex; align-items: center; gap: 3px; background: #0e131acc; border-radius: 8px; padding: 3px 7px; }
-  #topbar .warn { color: #ff8c7a; }
-  #res-age { margin-left: auto; background: #3d3120cc; border: 1px solid #8a6b40; border-radius: 8px; padding: 3px 8px; color: #ffd98c; font-size: 12px; }
-  #btn-menu, #btn-speed { pointer-events: auto; background: #0e131acc; border: 1px solid #3a4553; color: #e8e4d8; border-radius: 8px; padding: 3px 9px; font-size: 14px; }
+  #topbar .res {
+    display: flex; align-items: center; gap: 4px;
+    background-image: var(--parch);
+    background-color: #d9c9a3;
+    color: #3a2a12;
+    border: 1px solid #6b5024; border-radius: 4px;
+    box-shadow: 0 1px 0 rgba(255,250,230,0.5) inset, 0 1px 2px rgba(0,0,0,0.4);
+    padding: 2px 7px 2px 4px;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  .res-ico { width: 18px; height: 18px; display: inline-flex; }
+  .res-ico canvas { width: 18px; height: 18px; }
+  #topbar .warn { color: #a02010; }
+  #res-age {
+    margin-left: auto;
+    background-image: var(--parch); background-color: #d9c9a3;
+    border: 1px solid #8a6b28; border-radius: 4px; padding: 3px 9px;
+    color: #5c3a10; font-size: 12.5px;
+    font-family: Georgia, 'Times New Roman', serif; font-weight: 700;
+    box-shadow: 0 0 0 1px #d8b45a55, 0 1px 2px rgba(0,0,0,0.4);
+  }
+  #btn-menu, #btn-speed {
+    pointer-events: auto;
+    background: linear-gradient(#8a8274, #5c564a);
+    background-blend-mode: multiply;
+    background-image: var(--stone);
+    border: 1px solid #2a2418; border-radius: 4px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 -1px 0 rgba(0,0,0,0.35) inset;
+    color: #f0e6c8; padding: 3px 9px; font-size: 14px; font-weight: 700;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.6);
+  }
   #btn-speed { font-size: 12px; min-width: 38px; }
 
   /* ---- quick buttons ---- */
   .quick {
     position: fixed; right: 8px; z-index: 10;
-    background: #1d232bdd; border: 1px solid #3a4553; color: #e8e4d8;
-    border-radius: 12px; width: 46px; height: 46px; font-size: 20px;
+    background-image: var(--wood);
+    background-color: #4a3018;
+    border: 1px solid #2a1c0c;
+    box-shadow: 0 0 0 1px #d8b45a66, 0 1px 0 rgba(255,246,220,0.2) inset, 0 2px 5px rgba(0,0,0,0.5);
+    color: #e8e4d8;
+    border-radius: 8px; width: 46px; height: 46px; font-size: 20px;
     display: flex; align-items: center; justify-content: center;
   }
   #btn-idle { top: calc(env(safe-area-inset-top, 0px) + 46px); position: fixed; }
@@ -51,46 +85,79 @@
     display: flex; align-items: center; justify-content: center; padding: 0 3px;
   }
 
-  /* ---- bottom panel ---- */
+  /* ---- bottom panel: carved wood frame ---- */
   #panel {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
     display: flex; align-items: flex-end; gap: 8px;
-    padding: 8px 8px calc(env(safe-area-inset-bottom, 0px) + 8px);
-    background: linear-gradient(transparent, #171c23dd 30%, #171c23f5);
+    padding: 9px 8px calc(env(safe-area-inset-bottom, 0px) + 8px);
+    background-image: var(--wood);
+    background-color: #4a3018;
+    border-top: 2px solid #2a1c0c;
+    box-shadow: 0 2px 0 #d8b45a55 inset, 0 -3px 10px rgba(0,0,0,0.55);
     pointer-events: none;
   }
   #minimap-wrap {
     pointer-events: auto; flex: 0 0 auto;
-    border: 2px solid #3a4553; border-radius: 10px; overflow: hidden; background: #0a0d11;
-    width: 116px; height: 116px; transform: rotate(0deg);
+    border: 3px solid #8a6b28; border-radius: 4px; overflow: hidden; background: #0a0d11;
+    box-shadow: 0 0 0 1px #2a1c0c, 0 0 0 2px #d8b45a, 0 0 0 4px #4a3414, 0 2px 6px rgba(0,0,0,0.5);
+    width: 112px; height: 112px;
   }
   #minimap { width: 100%; height: 100%; display: block; }
   #panel-right { flex: 1; min-width: 0; pointer-events: auto; }
-  #panel-info { font-size: 12px; line-height: 1.35; padding: 0 2px 6px; min-height: 34px; }
-  .sel-name { font-weight: 700; font-size: 14px; color: #ffe9b8; }
-  .sel-sub { color: #b8bfc9; }
-  .queue-line { color: #9ce09c; font-size: 12px; margin-top: 2px; }
+  #panel-top-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 5px; }
+  #portrait-wrap {
+    flex: 0 0 auto; width: 54px; height: 54px;
+    border: 2px solid #8a6b28; border-radius: 3px; overflow: hidden;
+    box-shadow: 0 0 0 1px #2a1c0c, 0 0 0 2px #d8b45a99, 0 1px 3px rgba(0,0,0,0.5);
+    background: #0a0d11;
+  }
+  #portrait { width: 100%; height: 100%; display: block; }
+  #panel-info {
+    font-size: 12px; line-height: 1.35; padding: 0 2px; min-height: 34px; flex: 1; min-width: 0;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.7);
+  }
+  .sel-name {
+    font-weight: 700; font-size: 14.5px; color: #ffe9b8;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  .sel-sub { color: #d8cbb0; }
+  .queue-line { color: #b8e8a0; font-size: 12px; margin-top: 2px; }
   #panel-actions {
-    display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;
+    display: flex; gap: 6px; overflow-x: auto; padding: 2px;
     scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
   #panel-actions::-webkit-scrollbar { display: none; }
+  /* carved stone buttons with beveled edges */
   .cmd-btn {
-    flex: 0 0 auto; width: 76px; min-height: 68px;
-    background: #232b36; border: 1px solid #46536477; border-radius: 12px;
-    color: #e8e4d8; font-size: 10px; line-height: 1.2; font-weight: 600;
+    flex: 0 0 auto; width: 76px; min-height: 70px;
+    background-image: var(--stone);
+    background-color: #6e675c;
+    border: 1px solid #241c10; border-radius: 5px;
+    box-shadow: 0 2px 0 rgba(255,246,220,0.28) inset, 2px 0 0 rgba(255,246,220,0.12) inset,
+                0 -2px 0 rgba(0,0,0,0.35) inset, -2px 0 0 rgba(0,0,0,0.2) inset,
+                0 1px 3px rgba(0,0,0,0.45);
+    color: #f4ecd8; font-size: 10px; line-height: 1.2; font-weight: 700;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-    padding: 6px 4px;
+    padding: 5px 4px;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.7);
   }
-  .cmd-btn:active { background: #2f3a48; }
+  .cmd-btn:active {
+    box-shadow: 0 2px 0 rgba(0,0,0,0.3) inset, 0 -1px 0 rgba(255,246,220,0.15) inset;
+    filter: brightness(0.9);
+  }
   .cmd-btn .ico { font-size: 22px; }
+  .cmd-btn .btn-ico {
+    width: 38px; height: 38px;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.5));
+  }
+  .cmd-btn canvas.btn-ico { width: 22px; height: 22px; margin: 8px 0; }
   .cmd-btn .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
-  .cmd-btn .sub { color: #a7b0bc; font-size: 9px; white-space: pre-line; }
+  .cmd-btn .sub { color: #d4c8ae; font-size: 9px; white-space: pre-line; }
   .cmd-btn.nocash { opacity: 0.45; }
-  .cmd-btn.age { border-color: #b08d45; background: #33301f; }
-  .cmd-btn.tech { border-color: #5a7a9c66; }
-  .cmd-btn.confirm { border-color: #5fae5f; background: #23361f; }
-  .cmd-btn.page { border-color: #8a6b40; }
+  .cmd-btn.age { box-shadow: 0 0 0 1.5px #d8b45a inset, 0 2px 0 rgba(255,246,220,0.28) inset, 0 1px 3px rgba(0,0,0,0.45); }
+  .cmd-btn.tech { background-color: #5c5c50; }
+  .cmd-btn.confirm { box-shadow: 0 0 0 1.5px #6fae5f inset, 0 2px 0 rgba(255,246,220,0.28) inset, 0 1px 3px rgba(0,0,0,0.45); }
+  .cmd-btn.page { box-shadow: 0 0 0 1.5px #8a6b40 inset, 0 2px 0 rgba(255,246,220,0.28) inset, 0 1px 3px rgba(0,0,0,0.45); }
 
   /* ---- toast ---- */
   #toast {
@@ -109,17 +176,23 @@
   }
   #overlay.hidden { display: none; }
   #overlay-box { text-align: center; max-width: 420px; width: 100%; }
+  #overlay-box h1, #overlay-box h2 { font-family: Georgia, 'Times New Roman', serif; }
   #overlay-box h1 { font-size: 42px; letter-spacing: 1px; color: #ffd98c; text-shadow: 0 3px 12px #000; }
   #overlay-box h1 span { color: #7ab4ff; }
   #overlay-box h2 { font-size: 30px; color: #ffd98c; margin-bottom: 10px; }
-  .tagline { color: #b8bfc9; margin: 10px 0 24px; line-height: 1.5; }
+  .tagline { color: #c9bfa8; margin: 10px 0 24px; line-height: 1.5; font-family: Georgia, serif; }
   .menu-btns { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
   .menu-btn {
-    background: #232b36; color: #e8e4d8; border: 1px solid #46536488; border-radius: 14px;
+    background-image: var(--wood);
+    background-color: #4a3018;
+    color: #f0e6c8; border: 1px solid #2a1c0c; border-radius: 6px;
+    box-shadow: 0 0 0 1px #d8b45a55, 0 2px 0 rgba(255,246,220,0.15) inset, 0 -2px 0 rgba(0,0,0,0.3) inset, 0 2px 6px rgba(0,0,0,0.5);
     font-size: 17px; font-weight: 700; padding: 14px; width: 100%;
+    font-family: Georgia, 'Times New Roman', serif;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
   }
-  .menu-btn.primary { background: #3d5a86; border-color: #6d9bd8; }
-  .menu-btn.ghost { background: transparent; }
+  .menu-btn.primary { box-shadow: 0 0 0 2px #d8b45a, 0 2px 0 rgba(255,246,220,0.15) inset, 0 2px 8px rgba(0,0,0,0.55); }
+  .menu-btn.ghost { background: transparent; box-shadow: none; border-color: #4a3a1888; }
   .menu-btn:active { filter: brightness(1.25); }
   .opp-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 14px; color: #b8bfc9; font-size: 14px; font-weight: 600; }
   .opp-btn { background: #232b36; color: #e8e4d8; border: 1px solid #46536488; border-radius: 10px; font-size: 14px; font-weight: 700; padding: 8px 14px; }
@@ -133,11 +206,11 @@
   <canvas id="game"></canvas>
 
   <div id="topbar">
-    <div class="res">🪵 <span id="res-wood">0</span></div>
-    <div class="res">🍖 <span id="res-food">0</span></div>
-    <div class="res">🪙 <span id="res-gold">0</span></div>
-    <div class="res">🪨 <span id="res-stone">0</span></div>
-    <div class="res" id="res-pop">0/0</div>
+    <div class="res"><span class="res-ico" id="ico-wood"></span><span id="res-wood">0</span></div>
+    <div class="res"><span class="res-ico" id="ico-food"></span><span id="res-food">0</span></div>
+    <div class="res"><span class="res-ico" id="ico-gold"></span><span id="res-gold">0</span></div>
+    <div class="res"><span class="res-ico" id="ico-stone"></span><span id="res-stone">0</span></div>
+    <div class="res"><span class="res-ico" id="ico-pop"></span><span id="res-pop">0/0</span></div>
     <div id="res-age">Dark Age</div>
     <button id="btn-speed">1×</button>
     <button id="btn-menu">☰</button>
@@ -149,7 +222,10 @@
   <div id="panel">
     <div id="minimap-wrap"><canvas id="minimap"></canvas></div>
     <div id="panel-right">
-      <div id="panel-info"></div>
+      <div id="panel-top-row">
+        <div id="portrait-wrap" style="display:none"><canvas id="portrait" width="76" height="76"></canvas></div>
+        <div id="panel-info"></div>
+      </div>
       <div id="panel-actions"></div>
     </div>
   </div>

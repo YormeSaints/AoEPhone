@@ -19,7 +19,240 @@ const UI = {
 
 const $ = (id) => document.getElementById(id);
 
+// ============================================================
+// HUD skin: procedural wood / stone / parchment textures and
+// drawn resource icons — a classic RTS frame, no image files.
+// ============================================================
+function hudTexture(w, h, fn) {
+  const c = document.createElement('canvas');
+  c.width = w * 2; c.height = h * 2;
+  const g = c.getContext('2d');
+  g.scale(2, 2);
+  fn(g, w, h);
+  return c;
+}
+
+function woodTex() {
+  return hudTexture(128, 64, (g, w, h) => {
+    const rng = mulberry32(42);
+    g.fillStyle = '#4a3018'; g.fillRect(0, 0, w, h);
+    for (let row = 0; row < 4; row++) {
+      const y = row * 16;
+      g.fillStyle = ['#5e4023', '#573b20', '#654627', '#523719'][row % 4];
+      g.fillRect(0, y + 1.5, w, 14.5);
+      // grain
+      g.strokeStyle = 'rgba(30,18,8,0.4)'; g.lineWidth = 0.8;
+      for (let i = 0; i < 5; i++) {
+        const gy = y + 3 + rng() * 11;
+        g.beginPath(); g.moveTo(0, gy);
+        for (let x = 0; x <= w; x += 16) g.quadraticCurveTo(x + 8, gy + (rng() - 0.5) * 3.4, x + 16, gy);
+        g.stroke();
+      }
+      // occasional knot
+      if (rng() < 0.7) {
+        const kx = rng() * w, ky = y + 8;
+        g.strokeStyle = 'rgba(30,18,8,0.5)';
+        g.beginPath(); g.ellipse(kx, ky, 3.4, 2.2, 0.3, 0, 7); g.stroke();
+        g.beginPath(); g.ellipse(kx, ky, 1.6, 1, 0.3, 0, 7); g.stroke();
+      }
+      // seams + joints + nails
+      g.fillStyle = 'rgba(15,9,4,0.65)'; g.fillRect(0, y, w, 1.5);
+      const jx = ((row % 2) * 64 + 24 + rng() * 24) % w;
+      g.fillRect(jx, y + 1.5, 1.5, 14.5);
+      g.fillStyle = '#1f1409';
+      g.beginPath(); g.arc((jx + 8) % w, y + 5, 1.1, 0, 7); g.fill();
+      g.beginPath(); g.arc((jx + 8) % w, y + 12, 1.1, 0, 7); g.fill();
+    }
+    // top-light sheen
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(255,220,160,0.06)'); grad.addColorStop(1, 'rgba(0,0,0,0.12)');
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  });
+}
+
+function stoneTex() {
+  return hudTexture(72, 72, (g, w, h) => {
+    const rng = mulberry32(99);
+    g.fillStyle = '#6e675c'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 60; i++) {
+      g.fillStyle = rng() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)';
+      g.fillRect(rng() * w, rng() * h, 2 + rng() * 4, 1.5 + rng() * 3);
+    }
+    // masonry joints
+    g.strokeStyle = 'rgba(25,22,18,0.35)'; g.lineWidth = 1;
+    for (let y = 0; y < h; y += 18) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+      for (let x = (y / 18 % 2) * 12; x < w; x += 24) {
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 18); g.stroke();
+      }
+    }
+  });
+}
+
+function parchTex() {
+  return hudTexture(80, 40, (g, w, h) => {
+    const rng = mulberry32(7);
+    g.fillStyle = '#d9c9a3'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 90; i++) {
+      g.fillStyle = rng() < 0.5 ? 'rgba(160,130,80,0.12)' : 'rgba(255,250,235,0.15)';
+      g.fillRect(rng() * w, rng() * h, 1.5 + rng() * 3, 1);
+    }
+    g.fillStyle = 'rgba(120,90,50,0.15)';
+    g.fillRect(0, 0, w, 2); g.fillRect(0, h - 2, w, 2);
+  });
+}
+
+// small drawn resource icons (retina 2x)
+function hudIcon(kind) {
+  return hudTexture(20, 20, (g, w, h) => {
+    const cx = w / 2, cy = h / 2;
+    g.lineWidth = 1;
+    if (kind === 'wood') {
+      // two stacked logs, end-on
+      for (const [x, y] of [[cx - 4, cy + 3], [cx + 4, cy + 3], [cx, cy - 3]]) {
+        g.fillStyle = '#8a5f33'; g.beginPath(); g.arc(x, y, 4.4, 0, 7); g.fill();
+        g.strokeStyle = '#4a3018'; g.stroke();
+        g.fillStyle = '#c9a266'; g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill();
+        g.strokeStyle = '#8a5f33';
+        g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.stroke();
+      }
+    } else if (kind === 'food') {
+      // ham leg
+      g.fillStyle = '#b5502f';
+      g.beginPath(); g.ellipse(cx - 2, cy + 1, 6, 4.6, -0.6, 0, 7); g.fill();
+      g.strokeStyle = '#7c3018'; g.stroke();
+      g.fillStyle = 'rgba(255,220,190,0.5)';
+      g.beginPath(); g.ellipse(cx - 3, cy - 0.5, 3, 2, -0.6, 0, 7); g.fill();
+      g.strokeStyle = '#e8dcc8'; g.lineWidth = 2.2;
+      g.beginPath(); g.moveTo(cx + 3, cy - 2); g.lineTo(cx + 6.5, cy - 5.5); g.stroke();
+      g.fillStyle = '#e8dcc8';
+      g.beginPath(); g.arc(cx + 7.4, cy - 5, 1.6, 0, 7); g.fill();
+      g.beginPath(); g.arc(cx + 5.6, cy - 7, 1.6, 0, 7); g.fill();
+    } else if (kind === 'gold') {
+      // coin stack
+      for (let i = 0; i < 3; i++) {
+        g.fillStyle = '#e8c33f';
+        g.beginPath(); g.ellipse(cx - 2 + i * 1.4, cy + 3.4 - i * 3, 5.4, 2.6, 0, 0, 7); g.fill();
+        g.strokeStyle = '#8a6b12'; g.stroke();
+        g.fillStyle = '#f7de7a';
+        g.beginPath(); g.ellipse(cx - 2 + i * 1.4, cy + 2.6 - i * 3, 4, 1.6, 0, 0, 7); g.fill();
+      }
+    } else if (kind === 'stone') {
+      for (const [x, y, r] of [[cx - 3, cy + 2.4, 4.6], [cx + 3.6, cy + 3, 3.6], [cx + 1, cy - 3, 3.8]]) {
+        g.fillStyle = '#8d8d8d';
+        g.beginPath();
+        g.moveTo(x - r, y); g.lineTo(x - r * 0.35, y - r); g.lineTo(x + r * 0.6, y - r * 0.75); g.lineTo(x + r, y);
+        g.closePath(); g.fill();
+        g.strokeStyle = '#4c4c4c'; g.stroke();
+        g.fillStyle = '#b5b5b5';
+        g.beginPath(); g.moveTo(x - r * 0.35, y - r); g.lineTo(x + r * 0.1, y - r * 0.45); g.lineTo(x - r * 0.5, y - r * 0.4); g.closePath(); g.fill();
+      }
+    } else if (kind === 'pop') {
+      for (const [x, sh] of [[cx - 3.4, 0], [cx + 3.4, 0]]) {
+        g.fillStyle = sh ? '#c9b47c' : '#e2cf9b';
+        g.beginPath(); g.arc(x, cy - 3.4, 2.6, 0, 7); g.fill();
+        g.beginPath(); g.moveTo(x - 3.4, cy + 7); g.quadraticCurveTo(x, cy - 1.4, x + 3.4, cy + 7); g.closePath(); g.fill();
+        g.strokeStyle = '#6b5836'; g.lineWidth = 0.8; g.stroke();
+      }
+    } else if (kind === 'scroll') {
+      g.fillStyle = '#e2d3ab';
+      g.fillRect(cx - 5.4, cy - 6.4, 10.8, 12.8);
+      g.strokeStyle = '#8a6b40'; g.strokeRect(cx - 5.4, cy - 6.4, 10.8, 12.8);
+      g.fillStyle = '#c9b47c';
+      g.fillRect(cx - 6.6, cy - 7.6, 13.2, 2.6);
+      g.fillRect(cx - 6.6, cy + 5, 13.2, 2.6);
+      g.strokeStyle = 'rgba(110,80,40,0.7)'; g.lineWidth = 0.9;
+      for (let i = 0; i < 3; i++) {
+        g.beginPath(); g.moveTo(cx - 3.4, cy - 3 + i * 3); g.lineTo(cx + 3.4, cy - 3 + i * 3); g.stroke();
+      }
+    } else if (kind === 'age') {
+      // laurel chevron
+      g.strokeStyle = '#d8b45a'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(cx - 6, cy + 4); g.lineTo(cx, cy - 4); g.lineTo(cx + 6, cy + 4); g.stroke();
+      g.beginPath(); g.moveTo(cx - 6, cy + 8); g.lineTo(cx, cy); g.lineTo(cx + 6, cy + 8); g.stroke();
+      g.fillStyle = '#f7de7a';
+      g.beginPath(); g.arc(cx, cy - 6, 1.8, 0, 7); g.fill();
+    }
+  });
+}
+
+let hudReady = false;
+function initHudSkin() {
+  if (hudReady) return;
+  hudReady = true;
+  const root = document.documentElement.style;
+  root.setProperty('--wood', `url(${woodTex().toDataURL()})`);
+  root.setProperty('--stone', `url(${stoneTex().toDataURL()})`);
+  root.setProperty('--parch', `url(${parchTex().toDataURL()})`);
+  // swap top-bar emoji for drawn icons
+  for (const k of ['wood', 'food', 'gold', 'stone', 'pop']) {
+    const slot = $(`ico-${k}`);
+    if (slot) { slot.innerHTML = ''; slot.appendChild(hudIcon(k)); }
+  }
+}
+
+// sprite-based button icons (cached as data URLs)
+const iconCache = new Map();
+function spriteIconURL(kind, type) {
+  const key = `${kind}_${type}`;
+  if (iconCache.has(key)) return iconCache.get(key);
+  const src = kind === 'b' ? buildingSprite(type, 0, true) : unitSprite(type, 0, 0);
+  const c = document.createElement('canvas');
+  c.width = 80; c.height = 80;
+  const g = c.getContext('2d');
+  // fit sprite into the box with a little padding
+  const scale = Math.min(72 / src.width, 72 / src.height);
+  const w = src.width * scale, h = src.height * scale;
+  g.drawImage(src, (80 - w) / 2, (80 - h) / 2 + (kind === 'u' ? 4 : 0), w, h);
+  const url = c.toDataURL();
+  iconCache.set(key, url);
+  return url;
+}
+function iconEl(url) {
+  const img = document.createElement('img');
+  img.src = url; img.className = 'btn-ico';
+  return img;
+}
+
+// portrait of the current selection
+function updatePortrait(sel) {
+  const wrap = $('portrait-wrap'), pc = $('portrait');
+  if (!wrap || !pc) return;
+  if (!sel.length || sel[0].kind === 'res' && false) { }
+  if (!sel.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const g = pc.getContext('2d');
+  const W = pc.width, H = pc.height;
+  // sky-to-grass backdrop
+  const grad = g.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#7da7c9'); grad.addColorStop(0.62, '#b8cbd8');
+  grad.addColorStop(0.63, '#5c8a45'); grad.addColorStop(1, '#3f6b31');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  const e = sel[0];
+  let spr = null;
+  if (e.kind === 'unit') spr = unitSprite(e.type, e.owner, 0);
+  else if (e.kind === 'bldg') spr = buildingSprite(e.type, e.owner, true);
+  else if (e.kind === 'res') spr = resSprite(e.rtype, e.id % 7);
+  if (spr) {
+    const scale = Math.min((W - 10) / spr.width, (H - 8) / spr.height) * (e.kind === 'unit' ? 1.45 : 1);
+    const w = spr.width * scale, h = spr.height * scale;
+    g.drawImage(spr, (W - w) / 2, H - h - (e.kind === 'unit' ? 2 : 4), w, h);
+  }
+  // multi-select count badge
+  if (sel.length > 1) {
+    g.fillStyle = 'rgba(20,14,6,0.8)';
+    g.fillRect(W - 26, 2, 24, 16);
+    g.fillStyle = '#ffd98c'; g.font = 'bold 11px Georgia, serif'; g.textAlign = 'center';
+    g.fillText('×' + sel.length, W - 14, 14);
+  }
+  // inner shading
+  const vg = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.85);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(20,12,4,0.4)');
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+}
+
 function initUI() {
+  initHudSkin();
   $('btn-menu').onclick = () => showOverlay('pause');
   $('btn-idle').onclick = cycleIdleVillager;
   $('btn-army').onclick = selectArmy;
@@ -70,6 +303,7 @@ function rebuildPanel() {
   panel.innerHTML = ''; info.innerHTML = '';
   const sel = UI.selection.filter(alive);
   if (sel.length !== UI.selection.length) UI.selection = sel;
+  if (G) updatePortrait(UI.placing ? [] : sel);
 
   if (UI.placing) {
     info.innerHTML = `<div class="sel-name">Place ${BUILDINGS[UI.placing.type].name}</div><div class="sel-sub">Drag to position</div>`;
@@ -109,7 +343,7 @@ function rebuildPanel() {
         if (d.age > p.age) continue;
         // additional Town Centers unlock in Castle Age; rebuilding is always allowed
         if (bt === 'towncenter' && p.age < 2 && hasTC) continue;
-        addBtn(panel, d.icon, `${d.name}\n${costText(d.cost)}`, () => startPlacing(bt), canAfford(p, d.cost) ? '' : 'nocash');
+        addBtn(panel, spriteIconURL('b', bt), `${d.name}\n${costText(d.cost)}`, () => startPlacing(bt), canAfford(p, d.cost) ? '' : 'nocash');
       }
     }
     return;
@@ -145,7 +379,7 @@ function rebuildPanel() {
     const u = UNITS[ut];
     if (u.age > p.age) continue;
     const nm = (p.buffs[ut] && p.buffs[ut].rename) || u.name;
-    addBtn(panel, u.icon, `${nm}\n${costText(u.cost)}`, () => { if (trainUnit(b, ut)) sfx('click'); refreshPanel(); },
+    addBtn(panel, spriteIconURL('u', ut), `${nm}\n${costText(u.cost)}`, () => { if (trainUnit(b, ut)) sfx('click'); refreshPanel(); },
       canAfford(p, u.cost) ? '' : 'nocash');
   }
   // techs at this building
@@ -153,7 +387,7 @@ function rebuildPanel() {
     if (t.from !== b.type || p.techs[id] || p.researching[id]) continue;
     if (t.age > p.age) continue;
     if (t.req && !p.techs[t.req]) continue;
-    addBtn(panel, '📜', `${t.name}\n${costText(t.cost)}`, () => { if (startResearch(b, id)) sfx('click'); refreshPanel(); },
+    addBtn(panel, hudIcon('scroll'), `${t.name}\n${costText(t.cost)}`, () => { if (startResearch(b, id)) sfx('click'); refreshPanel(); },
       canAfford(p, t.cost) ? 'tech' : 'tech nocash');
   }
   // age up at town center
@@ -161,7 +395,7 @@ function rebuildPanel() {
     const cost = AGE_COST[p.age + 1];
     const need = AGE_REQ_BLDGS[p.age + 1] - countAgeBuildings(p);
     const ok = need <= 0 && canAfford(p, cost);
-    addBtn(panel, '⬆️', `${AGE_NAMES[p.age + 1]}\n${costText(cost)}${need > 0 ? `\nNeed ${need} more ${AGE_NAMES[p.age]} bldg` : ''}`,
+    addBtn(panel, hudIcon('age'), `${AGE_NAMES[p.age + 1]}\n${costText(cost)}${need > 0 ? `\nNeed ${need} more ${AGE_NAMES[p.age]} bldg` : ''}`,
       () => { if (startAgeUp(b)) sfx('click'); refreshPanel(); }, ok ? 'age' : 'age nocash');
   }
 }
@@ -204,8 +438,14 @@ function addBtn(parent, icon, label, fn, cls = '') {
   const el = document.createElement('button');
   el.className = 'cmd-btn ' + cls;
   const lines = label.split('\n');
-  el.innerHTML = `<span class="ico">${icon}</span><span class="lbl">${lines[0]}</span>` +
+  el.innerHTML = `<span class="lbl">${lines[0]}</span>` +
     (lines[1] ? `<span class="sub">${lines.slice(1).join('<br>')}</span>` : '');
+  // icon may be an emoji string, a data-URL image, or a canvas element
+  let ic;
+  if (icon instanceof HTMLElement) { ic = icon; ic.classList.add('btn-ico'); }
+  else if (typeof icon === 'string' && icon.startsWith('data:')) ic = iconEl(icon);
+  else { ic = document.createElement('span'); ic.className = 'ico'; ic.textContent = icon; }
+  el.insertBefore(ic, el.firstChild);
   el.onclick = (e) => { e.stopPropagation(); fn(); };
   parent.appendChild(el);
   return el;
