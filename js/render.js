@@ -288,6 +288,51 @@ function drawBuildingArt(g, type, s, cx, base, teamCol, done) {
       g.fillStyle = teamCol; g.fillRect(cx - fw * 0.3, base - wallH * 0.3, fw * 0.6, 4);
       break;
     }
+    case 'monastery': {
+      wall(cx - fw, base, cx, base + fh, '#e0d6c0', '#c2b79e');
+      wall(cx, base + fh, cx + fw, base, '#d1c6ad', '#b3a88c');
+      roof(6, '#8a5a9c', '#784d89');
+      // central dome + spire
+      g.fillStyle = '#9c6bb0';
+      g.beginPath(); g.arc(cx, base - wallH - fh * 0.5, 12, Math.PI, 0); g.fill();
+      g.fillRect(cx - 12, base - wallH - fh * 0.5, 24, 4);
+      g.strokeStyle = '#ffd98c'; g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(cx, base - wallH - fh * 0.5 - 12); g.lineTo(cx, base - wallH - fh * 0.5 - 24); g.stroke();
+      g.beginPath(); g.arc(cx, base - wallH - fh * 0.5 - 26, 2.5, 0, 7); g.stroke();
+      g.fillStyle = teamCol; g.fillRect(cx - fw * 0.3, base - wallH * 0.35, fw * 0.6, 4);
+      break;
+    }
+    case 'market': {
+      wall(cx - fw, base, cx, base + fh, '#d6bd8f', '#b8a077');
+      wall(cx, base + fh, cx + fw, base, '#c5ac7e', '#a78f66');
+      roof(4, '#b0703a', '#9c6233');
+      // striped awnings on the front faces
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          g.fillStyle = i % 2 ? '#e8e4d8' : '#c0483e';
+          g.beginPath();
+          const ax = cx + side * (fw * 0.15 + i * fw * 0.22), ay = base - wallH * 0.55 + (fw * 0.15 + i * fw * 0.22) * (fh / fw);
+          g.moveTo(ax, ay); g.lineTo(ax + side * fw * 0.2, ay + fh * 0.2); g.lineTo(ax + side * fw * 0.2, ay + fh * 0.2 + 7); g.lineTo(ax, ay + 7);
+          g.closePath(); g.fill();
+        }
+      }
+      g.fillStyle = teamCol; g.fillRect(cx - 3, base - wallH + 3, 6, 5);
+      break;
+    }
+    case 'stonewall': {
+      const grad = g.createLinearGradient(0, base - 26, 0, base);
+      grad.addColorStop(0, '#cfc9bd'); grad.addColorStop(1, '#948d81');
+      g.fillStyle = grad;
+      g.fillRect(cx - 13, base - 24, 26, 24);
+      g.fillStyle = '#dad4c8';
+      for (let i = 0; i < 3; i++) g.fillRect(cx - 13 + i * 10, base - 29, 6, 6);
+      // brick lines
+      g.strokeStyle = 'rgba(60,55,48,0.35)'; g.lineWidth = 1;
+      for (let yy = 1; yy < 4; yy++) {
+        g.beginPath(); g.moveTo(cx - 13, base - 24 + yy * 6); g.lineTo(cx + 13, base - 24 + yy * 6); g.stroke();
+      }
+      break;
+    }
     case 'palisade': {
       g.fillStyle = '#8a6b40';
       for (let i = -1; i <= 1; i++) {
@@ -367,7 +412,46 @@ function drawUnit(g, u, px, py, z) {
   g.fillStyle = 'rgba(0,0,0,0.25)';
   g.beginPath(); g.ellipse(px, py, 7 * s, 3.2 * s, 0, 0, 7); g.fill();
 
+  if (d.cls === 'monk') {
+    // robed figure, team-colored sash, staff
+    g.fillStyle = '#4a3f33';
+    g.beginPath();
+    g.moveTo(px - 5 * s, py); g.lineTo(px - 3.5 * s, py - 13 * s + bob); g.lineTo(px + 3.5 * s, py - 13 * s + bob); g.lineTo(px + 5 * s, py);
+    g.closePath(); g.fill();
+    g.fillStyle = col;
+    g.fillRect(px - 4 * s, py - 8 * s + bob, 8 * s, 2.5 * s);
+    g.fillStyle = '#e8c39c';
+    g.beginPath(); g.arc(px, py - 15 * s + bob, 3 * s, 0, 7); g.fill();
+    g.fillStyle = '#4a3f33'; // hood
+    g.beginPath(); g.arc(px, py - 16 * s + bob, 3.2 * s, Math.PI * 1.1, Math.PI * 1.9); g.fill();
+    g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.6 * s; // staff
+    g.beginPath(); g.moveTo(px + 5 * s, py); g.lineTo(px + 5 * s, py - 17 * s + bob); g.stroke();
+    g.fillStyle = '#ffd98c';
+    g.beginPath(); g.arc(px + 5 * s, py - 18 * s + bob, 1.8 * s, 0, 7); g.fill();
+    // chanting sparkle while converting
+    if (u.chant > 0) {
+      g.fillStyle = `rgba(255,230,140,${0.4 + 0.4 * Math.sin(G.time * 10)})`;
+      g.beginPath(); g.arc(px, py - 22 * s, 2.2 * s, 0, 7); g.fill();
+    }
+    return;
+  }
   if (d.cls === 'siege') {
+    if (u.type === 'trebuchet') {
+      // A-frame base, long throwing arm with counterweight
+      g.fillStyle = '#6b5738';
+      g.fillRect(px - 11 * s, py - 5 * s, 22 * s, 4 * s);
+      g.strokeStyle = '#54432a'; g.lineWidth = 2.6 * s;
+      g.beginPath(); g.moveTo(px - 7 * s, py - 3 * s); g.lineTo(px, py - 16 * s); g.lineTo(px + 7 * s, py - 3 * s); g.stroke();
+      // arm
+      g.lineWidth = 2.2 * s;
+      g.beginPath(); g.moveTo(px - 9 * s, py - 24 * s); g.lineTo(px + 6 * s, py - 12 * s); g.stroke();
+      g.fillStyle = '#3f3524'; // counterweight
+      g.fillRect(px + 4 * s, py - 13 * s, 6 * s, 6 * s);
+      g.strokeStyle = '#8a7a5a'; g.lineWidth = 1.2 * s; // sling rope
+      g.beginPath(); g.moveTo(px - 9 * s, py - 24 * s); g.lineTo(px - 12 * s, py - 16 * s); g.stroke();
+      g.fillStyle = col; g.fillRect(px - 11 * s, py - 8 * s, 4 * s, 3 * s);
+      return;
+    }
     if (u.type === 'ram') {
       g.fillStyle = '#7a5c36';
       g.fillRect(px - 10 * s, py - 12 * s + bob, 20 * s, 8 * s);
@@ -625,6 +709,18 @@ function drawEffect(fx, z) {
   } else if (fx.kind === 'die') {
     ctx.fillStyle = `rgba(60,30,20,${fx.t})`;
     ctx.beginPath(); ctx.ellipse(px, py, 8 * z * (1 - fx.t * 0.5), 4 * z * (1 - fx.t * 0.5), 0, 0, 7); ctx.fill();
+  } else if (fx.kind === 'convert') {
+    ctx.strokeStyle = `rgba(255,220,120,${fx.t})`;
+    ctx.lineWidth = 2.5;
+    const r = (0.9 - fx.t) * 30 * z;
+    ctx.beginPath(); ctx.arc(px, py - 8 * z, Math.max(2, r), 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(px, py - 8 * z, Math.max(1, r * 0.55), 0, 7); ctx.stroke();
+  } else if (fx.kind === 'heal') {
+    ctx.fillStyle = `rgba(140,255,160,${fx.t * 1.4})`;
+    for (let i = 0; i < 3; i++) {
+      const a = i * 2.1 + fx.t * 6;
+      ctx.fillRect(px + Math.cos(a) * 6 * z - 1, py - 14 * z - (0.5 - fx.t) * 20 * z + Math.sin(a) * 3, 2.5, 2.5);
+    }
   } else if (fx.kind === 'rubble') {
     ctx.fillStyle = `rgba(70,60,50,${Math.min(0.8, fx.t / 4)})`;
     const s = fx.size * TW2 * 0.7 * z;

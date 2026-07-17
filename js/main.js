@@ -3,7 +3,7 @@
 // Bootstrap + game loop.
 // ============================================================
 
-let paused = false, lastFrame = 0, uiRefreshT = 0;
+let paused = false, lastFrame = 0, uiRefreshT = 0, gameSpeed = 1;
 
 function startGame(difficulty) {
   newGame(difficulty);
@@ -24,7 +24,7 @@ function frame(t) {
   const dt = Math.min(0.05, (t - lastFrame) / 1000 || 0.016);
   lastFrame = t;
   if (G && !paused && !G.over) {
-    tick(dt);
+    tick(dt * gameSpeed);
     if (G.over) {
       showOverlay(G.over);
       sfx(G.over === 'victory' ? 'age' : 'boom');

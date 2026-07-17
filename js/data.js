@@ -23,6 +23,8 @@ const UNITS = {
   guard:     { name:'Castle Guard',  cls:'inf',   cost:{food:55,gold:45},   hp:70,  atk:9,  range:0.6, rof:2,   speed:1.05, los:5, armor:1, parmor:1, pop:1, time:14, age:2, from:'castle',     icon:'🗡️', bonus:{bldg:3} },
   ram:       { name:'Battering Ram', cls:'siege', cost:{wood:160,gold:75},  hp:200, atk:3,  range:0.7, rof:5,   speed:0.55, los:3, armor:0, parmor:15,pop:2, time:22, age:2, from:'siegeworkshop', icon:'🐏', bonus:{bldg:60} },
   mangonel:  { name:'Mangonel',      cls:'siege', cost:{wood:160,gold:135}, hp:50,  atk:28, range:6,   rof:6,   speed:0.6,  los:8, armor:0, parmor:6, pop:2, time:24, age:2, from:'siegeworkshop', icon:'💥', bonus:{bldg:12}, splash:1.1 },
+  monk:      { name:'Monk',          cls:'monk',  cost:{gold:100},          hp:30,  atk:0,  range:4,   rof:1,   speed:0.7,  los:9, armor:0, parmor:0, pop:1, time:20, age:2, from:'monastery',  icon:'🙏', bonus:{}, convert:true },
+  trebuchet: { name:'Trebuchet',     cls:'siege', cost:{wood:200,gold:200}, hp:80,  atk:45, range:10,  rof:8,   speed:0.4,  los:11,armor:1, parmor:8, pop:2, time:30, age:3, from:'castle',     icon:'🏗️', bonus:{bldg:120}, splash:0.8 },
 };
 
 // drop: which resources may be deposited there. size: square footprint in tiles.
@@ -39,9 +41,15 @@ const BUILDINGS = {
   blacksmith:   { name:'Blacksmith',     cost:{wood:150},           hp:1800, size:2, age:1, los:5, time:25, icon:'🔨' },
   tower:        { name:'Watch Tower',    cost:{wood:50,stone:125},  hp:850,  size:1, age:1, los:9, atk:6, range:7, rof:2, time:25, icon:'🗼' },
   siegeworkshop:{ name:'Siege Workshop', cost:{wood:200},           hp:1500, size:3, age:2, los:5, trains:['ram','mangonel'], time:30, icon:'🛠️' },
-  castle:       { name:'Castle',         cost:{stone:650},          hp:4200, size:4, age:2, los:10, trains:['guard'], atk:13, range:8, rof:1.6, time:90, icon:'🏰' },
+  castle:       { name:'Castle',         cost:{stone:650},          hp:4200, size:4, age:2, los:10, trains:['guard','trebuchet'], atk:13, range:8, rof:1.6, time:90, icon:'🏰' },
+  monastery:    { name:'Monastery',      cost:{wood:175},           hp:1100, size:3, age:2, los:6, trains:['monk'], time:30, icon:'🕍' },
+  market:       { name:'Market',         cost:{wood:175},           hp:1200, size:3, age:1, los:5, trade:true, time:25, icon:'⚖️' },
   palisade:     { name:'Palisade Wall',  cost:{wood:4},             hp:250,  size:1, age:0, los:1, time:5, icon:'🚧' },
+  stonewall:    { name:'Stone Wall',     cost:{stone:5},            hp:900,  size:1, age:1, los:1, time:8, icon:'🧱' },
 };
+
+// Market exchange: sell 100 of a resource for 70 gold, buy 100 for 140 gold.
+const TRADE_SELL = 70, TRADE_BUY = 140;
 
 // Technologies. effect(player, game) mutates player modifiers.
 // buff(type,...) helpers are resolved in engine.applyTech.
@@ -92,6 +100,12 @@ const TECHS = {
                  buff:{ units:['knight'], hp:20, atk:2, rename:'Cavalier' } },
   eliteguard:  { name:'Elite Guard',     cost:{food:400,gold:250},  time:30, age:3, from:'castle', desc:'Upgrade Castle Guards (+15 HP, +4 attack)',
                  buff:{ units:['guard'], hp:15, atk:4, rename:'Elite Guard' } },
+  eliteskirm:  { name:'Elite Skirmisher', cost:{wood:200,gold:100}, time:25, age:2, from:'archeryrange', desc:'Upgrade Skirmishers (+5 HP, +1 attack, +1 pierce armor)',
+                 buff:{ units:['skirmisher'], hp:5, atk:1, parmor:1, rename:'Elite Skirmisher' } },
+  husbandry:   { name:'Husbandry',       cost:{food:150},           time:20, age:2, from:'stable', desc:'Cavalry moves 10% faster',
+                 buff:{ units:['scout','knight'], speed:0.13 } },
+  squires:     { name:'Squires',         cost:{food:100},           time:20, age:2, from:'barracks', desc:'Infantry moves 10% faster',
+                 buff:{ units:['militia','spearman','guard'], speed:0.1 } },
 };
 
 // Base gather rates: resource units per second (before tech multipliers)

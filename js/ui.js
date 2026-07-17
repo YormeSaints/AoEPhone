@@ -23,6 +23,12 @@ function initUI() {
   $('btn-menu').onclick = () => showOverlay('pause');
   $('btn-idle').onclick = cycleIdleVillager;
   $('btn-army').onclick = selectArmy;
+  $('btn-speed').onclick = () => {
+    const speeds = [1, 1.5, 2];
+    gameSpeed = speeds[(speeds.indexOf(gameSpeed) + 1) % speeds.length];
+    $('btn-speed').textContent = gameSpeed + '×';
+    sfx('click');
+  };
   refreshPanel();
 }
 
@@ -90,8 +96,8 @@ function rebuildPanel() {
     const vills = sel.filter(u => u.kind === 'unit' && UNITS[u.type].cls === 'vill');
     if (vills.length) {
       const pages = [
-        ['house', 'mill', 'lumbercamp', 'miningcamp', 'farm', 'palisade', 'towncenter'],
-        ['barracks', 'archeryrange', 'stable', 'blacksmith', 'tower', 'siegeworkshop', 'castle'],
+        ['house', 'mill', 'lumbercamp', 'miningcamp', 'farm', 'market', 'palisade', 'stonewall', 'towncenter'],
+        ['barracks', 'archeryrange', 'stable', 'blacksmith', 'monastery', 'tower', 'siegeworkshop', 'castle'],
       ];
       addBtn(panel, UI.buildPage === 0 ? '🏠' : '⚔️', UI.buildPage === 0 ? 'Economy' : 'Military', () => {
         UI.buildPage = 1 - UI.buildPage; refreshPanel();
@@ -120,6 +126,20 @@ function rebuildPanel() {
     destroyBuilding(b); UI.setSelection([]); sfx('boom');
   });
   if (!b.done) return;
+
+  // market trading
+  if (d.trade) {
+    for (const k of ['wood', 'food', 'stone']) {
+      addBtn(panel, RES_ICON[k], `Sell 100\n→ ${TRADE_SELL}${RES_ICON.gold}`, () => {
+        if (marketSell(p, k)) { sfx('click'); refreshPanel(); } else uiToast(`Not enough ${k}`);
+      }, p.res[k] >= 100 ? '' : 'nocash');
+    }
+    for (const k of ['wood', 'food', 'stone']) {
+      addBtn(panel, RES_ICON[k], `Buy 100\n${TRADE_BUY}${RES_ICON.gold} →`, () => {
+        if (marketBuy(p, k)) { sfx('click'); refreshPanel(); } else uiToast('Not enough gold');
+      }, p.res.gold >= TRADE_BUY ? 'tech' : 'tech nocash');
+    }
+  }
 
   if (d.trains) for (const ut of d.trains) {
     const u = UNITS[ut];
@@ -265,7 +285,8 @@ function showOverlay(which) {
         <p><b>🖐 Drag</b> to pan · <b>🤏 pinch</b> to zoom · <b>long-press &amp; drag</b> to box-select troops · <b>double-tap</b> a unit to select all of its type.</p>
         <p><b>Economy:</b> villagers gather 🪵🍖🪙🪨 and drop them at the Town Center or camps. Build houses to raise the population cap. Build farms when berries run out.</p>
         <p><b>Ages:</b> build 2 buildings of your current age, then press ⬆️ at the Town Center to advance — new units, buildings and techs unlock each age.</p>
-        <p><b>Counters:</b> spearmen beat cavalry · skirmishers beat archers · knights crush archers &amp; siege · rams wreck buildings.</p>
+        <p><b>Counters:</b> spearmen beat cavalry · skirmishers beat archers · knights crush archers &amp; siege · rams and trebuchets wreck buildings.</p>
+        <p><b>More tools:</b> the Market trades resources for gold · Monks convert enemy units and heal your own · walls buy you time · the ⏩ button in the top bar speeds up the game.</p>
       </div>
       <button class="menu-btn primary" id="btn-back">Back</button>`;
     $('btn-back').onclick = () => showOverlay(G ? 'pause' : 'menu');
@@ -315,6 +336,7 @@ function sfx(kind) {
     boom:    [120, 40, 0.4, 'sawtooth', 0.1],
     alarm:   [700, 500, 0.35, 'square', 0.06],
     age:     [523, 784, 0.5, 'triangle', 0.09],
+    convert: [660, 1320, 0.6, 'sine', 0.07],
   }[kind] || [440, 440, 0.05, 'sine', 0.04];
   o.type = P[3];
   o.frequency.setValueAtTime(P[0], now);

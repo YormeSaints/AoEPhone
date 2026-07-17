@@ -148,6 +148,18 @@ function makePlayer(id, isAI, color) {
 }
 
 function canAfford(p, cost) { return Object.entries(cost).every(([k, v]) => p.res[k] >= v); }
+
+// ---- market trading ----
+function marketSell(p, k) {
+  if (k === 'gold' || p.res[k] < 100) return false;
+  p.res[k] -= 100; p.res.gold += TRADE_SELL;
+  return true;
+}
+function marketBuy(p, k) {
+  if (k === 'gold' || p.res.gold < TRADE_BUY) return false;
+  p.res.gold -= TRADE_BUY; p.res[k] += 100;
+  return true;
+}
 function pay(p, cost) { for (const [k, v] of Object.entries(cost)) p.res[k] -= v; }
 function refund(p, cost, frac) { for (const [k, v] of Object.entries(cost)) p.res[k] += Math.floor(v * frac); }
 
@@ -160,7 +172,7 @@ function applyTech(p, id) {
   if (t.buff) {
     for (const ut of t.buff.units) {
       const b = p.buffs[ut] = p.buffs[ut] || {};
-      for (const k of ['hp', 'atk', 'range', 'armor', 'parmor']) if (t.buff[k]) b[k] = (b[k] || 0) + t.buff[k];
+      for (const k of ['hp', 'atk', 'range', 'armor', 'parmor', 'speed']) if (t.buff[k]) b[k] = (b[k] || 0) + t.buff[k];
       if (t.buff.rename) b.rename = t.buff.rename;
       if (t.buff.bonus) b.bonus = t.buff.bonus;
       if (t.buff.hp) for (const u of G.units) if (u.owner === p.id && u.type === ut) { u.hp += t.buff.hp; u.maxhp += t.buff.hp; }
@@ -383,7 +395,7 @@ function countAgeBuildings(p) {
   const s = new Set();
   for (const b of G.buildings)
     if (b.owner === p.id && b.done && BUILDINGS[b.type].age === p.age &&
-        !['house', 'farm', 'palisade', 'towncenter'].includes(b.type)) s.add(b.type);
+        !['house', 'farm', 'palisade', 'stonewall', 'towncenter'].includes(b.type)) s.add(b.type);
   return s.size;
 }
 
@@ -490,7 +502,8 @@ function updateUnit(u, dt) {
   u.repath -= dt;
   switch (u.task) {
     case 'idle':
-      if (d.cls !== 'vill' && d.cls !== 'siege' || u.type === 'mangonel') autoAcquire(u);
+      if (d.cls === 'monk') monkIdleHeal(u, dt);
+      else if (d.cls !== 'vill' && d.cls !== 'siege' || u.type === 'mangonel') autoAcquire(u);
       break;
     case 'move':
       if (followPath(u, dt)) { u.task = 'idle'; u.path = null; }
@@ -568,6 +581,7 @@ function approach(u, e, range, dt) {
 }
 
 function updateAttack(u, dt, d) {
+  if (d.convert) return updateConvert(u, dt);
   if (!alive(u.target)) {
     const nt = autoAcquireNear(u);
     if (!nt) { u.task = 'idle'; u.target = null; u.path = null; return; }
@@ -645,6 +659,53 @@ function dealDamage(e, atk, bonus, melee, fromOwner) {
   if (op && op.isAI) { const c = entCenter(e); op.lastHit = { t: G.time, x: c[0], y: c[1] }; }
 }
 
+// ---- monk: conversion of enemy units, healing of friendly ones ----
+function updateConvert(u, dt) {
+  const t = u.target;
+  u.rest = Math.max(0, (u.rest || 0) - dt);
+  if (!alive(t) || t.kind !== 'unit' || t.owner === u.owner) {
+    u.task = 'idle'; u.target = null; u.path = null; u.chant = 0;
+    return;
+  }
+  if (approach(u, t, unitStat(u, 'range'), dt)) {
+    if (u.rest > 0) return; // recovering from the last conversion
+    if (!u.chantNeed) u.chantNeed = 6 + G.rng() * 4;
+    u.chant = (u.chant || 0) + dt;
+    t.beingConverted = G.time;
+    if (u.chant >= u.chantNeed) {
+      convertUnit(t, u.owner);
+      u.chant = 0; u.chantNeed = 0; u.rest = 12;
+      u.task = 'idle'; u.target = null;
+      sfxNear('convert', u.x, u.y);
+    }
+  } else if (u.chant > 0) u.chant = Math.max(0, u.chant - dt * 0.5); // faith fades while chasing
+}
+function convertUnit(t, newOwner) {
+  G.players[t.owner].pop -= UNITS[t.type].pop;
+  G.players[newOwner].pop += UNITS[t.type].pop;
+  t.owner = newOwner;
+  t.task = 'idle'; t.target = null; t.path = null;
+  t.carry = 0; t.carryType = null; t.lastRes = null; t.lastFarm = null;
+  G.effects.push({ kind: 'convert', x: t.x, y: t.y, t: 0.8 });
+  if (newOwner === 0) uiToast(`${unitName(t)} converted to your side!`);
+}
+function monkIdleHeal(u, dt) {
+  u.rest = Math.max(0, (u.rest || 0) - dt);
+  let best = null, bd = 7;
+  for (const f of G.units) {
+    if (f.owner !== u.owner || f === u || f.hp >= f.maxhp) continue;
+    const dd = Math.hypot(f.x - u.x, f.y - u.y);
+    if (dd < bd) { bd = dd; best = f; }
+  }
+  if (best && approach(u, best, 2.5, dt)) {
+    best.hp = Math.min(best.maxhp, best.hp + 3 * dt);
+    if ((u.healFx = (u.healFx || 0) + dt) > 0.5) {
+      u.healFx = 0;
+      G.effects.push({ kind: 'heal', x: best.x, y: best.y, t: 0.5 });
+    }
+  }
+}
+
 function autoAcquire(u) {
   const t = nearestEnemy(u.owner, u.x, u.y, UNITS[u.type].los, u.type === 'ram' ? 'bldg' : null);
   if (t) { u.task = 'attack'; u.target = t; }
@@ -662,7 +723,7 @@ function nearestEnemy(owner, x, y, range, onlyKind) {
   }
   for (const e of G.buildings) {
     if (e.owner === owner || onlyKind === 'unit') continue;
-    if (e.type === 'farm' || e.type === 'palisade') continue;
+    if (e.type === 'farm' || e.type === 'palisade' || e.type === 'stonewall') continue;
     const dd = Math.hypot(e.tx + e.size / 2 - x, e.ty + e.size / 2 - y) - e.size / 2;
     if (dd < bd) { bd = dd; best = e; }
   }
@@ -890,7 +951,7 @@ function tileExplored(x, y) { return G.explored[tIdx(x | 0, y | 0)]; }
 function checkVictory() {
   for (const p of G.players) {
     if (p.defeated) continue;
-    const hasB = G.buildings.some(b => b.owner === p.id && b.type !== 'farm' && b.type !== 'palisade');
+    const hasB = G.buildings.some(b => b.owner === p.id && b.type !== 'farm' && b.type !== 'palisade' && b.type !== 'stonewall');
     const hasU = G.units.some(u => u.owner === p.id);
     if (!hasB && !hasU) p.defeated = true;
   }

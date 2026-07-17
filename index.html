@@ -33,7 +33,8 @@
   #topbar .res { display: flex; align-items: center; gap: 3px; background: #0e131acc; border-radius: 8px; padding: 3px 7px; }
   #topbar .warn { color: #ff8c7a; }
   #res-age { margin-left: auto; background: #3d3120cc; border: 1px solid #8a6b40; border-radius: 8px; padding: 3px 8px; color: #ffd98c; font-size: 12px; }
-  #btn-menu { pointer-events: auto; background: #0e131acc; border: 1px solid #3a4553; color: #e8e4d8; border-radius: 8px; padding: 3px 9px; font-size: 14px; }
+  #btn-menu, #btn-speed { pointer-events: auto; background: #0e131acc; border: 1px solid #3a4553; color: #e8e4d8; border-radius: 8px; padding: 3px 9px; font-size: 14px; }
+  #btn-speed { font-size: 12px; min-width: 38px; }
 
   /* ---- quick buttons ---- */
   .quick {
@@ -135,6 +136,7 @@
     <div class="res">🪨 <span id="res-stone">0</span></div>
     <div class="res" id="res-pop">0/0</div>
     <div id="res-age">Dark Age</div>
+    <button id="btn-speed">1×</button>
     <button id="btn-menu">☰</button>
   </div>
 

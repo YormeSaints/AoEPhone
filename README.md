@@ -43,18 +43,23 @@ shift-drag to box-select).
   technologies and unit-line upgrades (Militia → Man-at-Arms → Long
   Swordsman → Champion, and more).
 - **Counters:** Spearmen beat cavalry · Skirmishers beat archers · Knights
-  crush archers and siege · Battering Rams and Mangonels wreck buildings ·
-  Castles and Watch Towers hold the line.
+  crush archers and siege · Battering Rams, Mangonels and Trebuchets wreck
+  buildings · Castles and Watch Towers hold the line.
+- **More tools:** the Market trades resources for gold · Monks convert enemy
+  units and heal your own · Palisade and Stone Walls buy you time · the ⏩
+  button in the top bar runs the game at 1×/1.5×/2×.
 - **Win** by destroying the red player's army and buildings before their
-  attack waves overwhelm you. Three difficulty levels.
+  attack waves overwhelm you. Three difficulty levels that change the AI's
+  economy, villager count and army sizes.
 
 ## 🛠 Tech
 
 - Plain HTML5 canvas + vanilla JS (`js/` — data, engine, AI, renderer, input, UI)
 - Isometric renderer with procedural sprites, fog of war, minimap
-- A* pathfinding, soft unit separation, projectile & splash combat
+- A* pathfinding, soft unit separation, projectile & splash combat,
+  unit conversion and healing
 - Full AI opponent: economy management, base building, age progression,
-  escalating attack waves
+  market trading, base defense, escalating attack waves
 - PWA: manifest + service worker → installable and playable offline
 - No build step, no dependencies
 

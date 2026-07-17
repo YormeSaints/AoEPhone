@@ -7,9 +7,9 @@
 const AI_VILL_TARGET = [10, 16, 22, 26];
 const AI_ARMY_CAP = [4, 10, 18, 30];
 const AI_DIFF = {
-  easy:   { eco: 0.7, wave0: 5,  waveGrow: 3, waveEvery: 110 },
-  normal: { eco: 1.0, wave0: 6,  waveGrow: 4, waveEvery: 90 },
-  hard:   { eco: 1.3, wave0: 8,  waveGrow: 6, waveEvery: 75 },
+  easy:   { eco: 0.7, wave0: 5,  waveGrow: 3, waveEvery: 110, villB: -2, armyMul: 0.8 },
+  normal: { eco: 1.0, wave0: 6,  waveGrow: 4, waveEvery: 90,  villB: 0,  armyMul: 1.0 },
+  hard:   { eco: 1.3, wave0: 8,  waveGrow: 6, waveEvery: 75,  villB: 4,  armyMul: 1.3 },
 };
 
 function aiUpdate(p, dt) {
@@ -33,8 +33,10 @@ function aiUpdate(p, dt) {
   const trickle = (cfg.eco - 0.7) * 0.75 * 0.7; // resources per tick, per type
   if (trickle > 0) for (const k of RES_KEYS) p.res[k] += trickle;
 
+  const villTarget = AI_VILL_TARGET[p.age] + cfg.villB;
+
   // --- villagers: train continuously ---
-  if (tc && vills.length < AI_VILL_TARGET[p.age] && tc.queue.length < 2) trainUnit(tc, 'villager');
+  if (tc && vills.length < villTarget && tc.queue.length < 2) trainUnit(tc, 'villager');
 
   // --- rebuild the town center if it was destroyed ---
   if (!tc && !underCon.some(b => b.type === 'towncenter') && myBldgs.length &&
@@ -122,12 +124,27 @@ function aiUpdate(p, dt) {
   }
   if (p.age >= 2 && !has('siegeworkshop') && p.res.wood >= 350) aiBuild(p, 'siegeworkshop', tc);
   if (p.age >= 2 && !has('castle') && p.res.stone >= 700) aiBuild(p, 'castle', tc);
+  if (p.age >= 2 && !has('market') && p.res.wood >= 300) aiBuild(p, 'market', tc);
 
   // --- age up: once the requirements are close, hoard resources for it ---
   const saving = !p.ageResearch && p.age < 3 && tc &&
-    vills.length >= AI_VILL_TARGET[p.age] - 2 &&
+    vills.length >= villTarget - 2 &&
     countAgeBuildings(p) >= AGE_REQ_BLDGS[p.age + 1];
   if (saving && canAfford(p, AGE_COST[p.age + 1])) startAgeUp(tc);
+
+  // --- market: dump surpluses into gold; spend surplus gold on whatever
+  // resource is blocking the age-up; buy food in a famine ---
+  if (hasDone('market')) {
+    if (p.res.stone > 750) marketSell(p, 'stone');
+    if (p.res.wood > 900) marketSell(p, 'wood');
+    if (p.res.food < 80 && p.res.gold > 500) marketBuy(p, 'food');
+    if (saving) {
+      const need = AGE_COST[p.age + 1];
+      for (const k of ['food', 'wood', 'stone']) {
+        if (need[k] && p.res[k] < need[k] && p.res.gold > (need.gold || 0) + TRADE_BUY + 150) { marketBuy(p, k); break; }
+      }
+    }
+  }
 
   // --- research (cheap & impactful first) ---
   const tryTech = (id) => {
@@ -141,12 +158,14 @@ function aiUpdate(p, dt) {
      'scalearmor', 'crossbow', 'lightcav', 'longswords', 'ironcasting', 'bodkinarrow'].forEach(tryTech);
 
   // --- train army (keep a defensive core, but bank while advancing) ---
-  const armyCap = (saving || needAgeB) ? (p.age === 0 ? 2 : 6) : AI_ARMY_CAP[p.age];
+  const fullCap = Math.round(AI_ARMY_CAP[p.age] * cfg.armyMul);
+  const armyCap = (saving || needAgeB) ? (p.age === 0 ? 2 : 6) : fullCap;
   if (army.length < armyCap && p.pop < p.popCap) {
     for (const b of myBldgs) {
       if (!b.done || !BUILDINGS[b.type].trains || b.type === 'towncenter' || b.queue.length >= 2) continue;
-      const opts = BUILDINGS[b.type].trains.filter(t => UNITS[t].age <= p.age && t !== 'villager' &&
-        !(t === 'scout' && p.age >= 2 && p.res.gold > 200));
+      const opts = BUILDINGS[b.type].trains.filter(t => UNITS[t].age <= p.age && t !== 'villager' && t !== 'monk' &&
+        !(t === 'scout' && p.age >= 2 && p.res.gold > 200) &&
+        !(t === 'trebuchet' && army.filter(a => a.type === 'trebuchet').length >= 2));
       if (!opts.length) continue;
       const pick = opts[(G.rng() * opts.length) | 0];
       trainUnit(b, pick);
@@ -155,7 +174,7 @@ function aiUpdate(p, dt) {
 
   // --- attack waves (never while banking for an age-up) ---
   ai.attackAt -= 0.7;
-  const waveSize = Math.max(5, Math.min(cfg.wave0 + ai.wave * cfg.waveGrow, AI_ARMY_CAP[p.age]));
+  const waveSize = Math.max(5, Math.min(cfg.wave0 + ai.wave * cfg.waveGrow, fullCap));
   if (!saving && !needAgeB && ai.attackAt <= 0 && army.length >= waveSize) {
     const target = aiPickTarget(p);
     if (target) {
@@ -245,7 +264,7 @@ function aiCanPlace(type, tx, ty) { // AI ignores fog (it "knows" its own territ
 
 function aiPickTarget(p) {
   // prefer enemy military buildings/TC, else any building, else any unit
-  const enemies = G.buildings.filter(b => b.owner !== p.id && b.type !== 'farm' && b.type !== 'palisade');
+  const enemies = G.buildings.filter(b => b.owner !== p.id && b.type !== 'farm' && b.type !== 'palisade' && b.type !== 'stonewall');
   if (enemies.length) {
     enemies.sort((a, b) => prio(b) - prio(a));
     return enemies[0];
