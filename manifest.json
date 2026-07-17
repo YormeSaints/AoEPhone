@@ -1,0 +1,14 @@
+{
+  "name": "EmpirePhone",
+  "short_name": "EmpirePhone",
+  "description": "A four-age real-time strategy game built for phones.",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#101418",
+  "theme_color": "#101418",
+  "icons": [
+    { "src": "icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

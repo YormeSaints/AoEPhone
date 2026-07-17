@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EmpirePhone">
+<meta name="theme-color" content="#101418">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<title>EmpirePhone — RTS for your phone</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; background: #101418; overscroll-behavior: none; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: #e8e4d8; user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
+
+  /* ---- top bar ---- */
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) 10px 6px;
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(#1d232bee, #1d232bcc 70%, transparent);
+    font-size: 13px; font-weight: 600; pointer-events: none;
+    z-index: 10;
+  }
+  #topbar .res { display: flex; align-items: center; gap: 3px; background: #0e131acc; border-radius: 8px; padding: 3px 7px; }
+  #topbar .warn { color: #ff8c7a; }
+  #res-age { margin-left: auto; background: #3d3120cc; border: 1px solid #8a6b40; border-radius: 8px; padding: 3px 8px; color: #ffd98c; font-size: 12px; }
+  #btn-menu { pointer-events: auto; background: #0e131acc; border: 1px solid #3a4553; color: #e8e4d8; border-radius: 8px; padding: 3px 9px; font-size: 14px; }
+
+  /* ---- quick buttons ---- */
+  .quick {
+    position: fixed; right: 8px; z-index: 10;
+    background: #1d232bdd; border: 1px solid #3a4553; color: #e8e4d8;
+    border-radius: 12px; width: 46px; height: 46px; font-size: 20px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #btn-idle { top: calc(env(safe-area-inset-top, 0px) + 46px); position: fixed; }
+  #btn-army { top: calc(env(safe-area-inset-top, 0px) + 98px); }
+  #idle-count {
+    position: absolute; top: -5px; right: -5px; background: #e05252; color: #fff;
+    font-size: 11px; font-weight: 700; border-radius: 9px; min-width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center; padding: 0 3px;
+  }
+
+  /* ---- bottom panel ---- */
+  #panel {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; align-items: flex-end; gap: 8px;
+    padding: 8px 8px calc(env(safe-area-inset-bottom, 0px) + 8px);
+    background: linear-gradient(transparent, #171c23dd 30%, #171c23f5);
+    pointer-events: none;
+  }
+  #minimap-wrap {
+    pointer-events: auto; flex: 0 0 auto;
+    border: 2px solid #3a4553; border-radius: 10px; overflow: hidden; background: #0a0d11;
+    width: 116px; height: 116px; transform: rotate(0deg);
+  }
+  #minimap { width: 100%; height: 100%; display: block; }
+  #panel-right { flex: 1; min-width: 0; pointer-events: auto; }
+  #panel-info { font-size: 12px; line-height: 1.35; padding: 0 2px 6px; min-height: 34px; }
+  .sel-name { font-weight: 700; font-size: 14px; color: #ffe9b8; }
+  .sel-sub { color: #b8bfc9; }
+  .queue-line { color: #9ce09c; font-size: 12px; margin-top: 2px; }
+  #panel-actions {
+    display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  #panel-actions::-webkit-scrollbar { display: none; }
+  .cmd-btn {
+    flex: 0 0 auto; width: 76px; min-height: 68px;
+    background: #232b36; border: 1px solid #46536477; border-radius: 12px;
+    color: #e8e4d8; font-size: 10px; line-height: 1.2; font-weight: 600;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    padding: 6px 4px;
+  }
+  .cmd-btn:active { background: #2f3a48; }
+  .cmd-btn .ico { font-size: 22px; }
+  .cmd-btn .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
+  .cmd-btn .sub { color: #a7b0bc; font-size: 9px; white-space: pre-line; }
+  .cmd-btn.nocash { opacity: 0.45; }
+  .cmd-btn.age { border-color: #b08d45; background: #33301f; }
+  .cmd-btn.tech { border-color: #5a7a9c66; }
+  .cmd-btn.confirm { border-color: #5fae5f; background: #23361f; }
+  .cmd-btn.page { border-color: #8a6b40; }
+
+  /* ---- toast ---- */
+  #toast {
+    position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 52px);
+    transform: translateX(-50%) translateY(-8px); opacity: 0; transition: all .25s;
+    background: #1d232bee; border: 1px solid #4a5766; padding: 8px 16px; border-radius: 20px;
+    font-size: 13px; font-weight: 600; z-index: 30; pointer-events: none; max-width: 86vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---- overlay menus ---- */
+  #overlay {
+    position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 30%, #2a333fee, #0d1116f5);
+    padding: 20px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay-box { text-align: center; max-width: 420px; width: 100%; }
+  #overlay-box h1 { font-size: 42px; letter-spacing: 1px; color: #ffd98c; text-shadow: 0 3px 12px #000; }
+  #overlay-box h1 span { color: #7ab4ff; }
+  #overlay-box h2 { font-size: 30px; color: #ffd98c; margin-bottom: 10px; }
+  .tagline { color: #b8bfc9; margin: 10px 0 24px; line-height: 1.5; }
+  .menu-btns { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+  .menu-btn {
+    background: #232b36; color: #e8e4d8; border: 1px solid #46536488; border-radius: 14px;
+    font-size: 17px; font-weight: 700; padding: 14px; width: 100%;
+  }
+  .menu-btn.primary { background: #3d5a86; border-color: #6d9bd8; }
+  .menu-btn.ghost { background: transparent; }
+  .menu-btn:active { filter: brightness(1.25); }
+  .help { text-align: left; font-size: 13.5px; line-height: 1.55; color: #ccd2da; margin-bottom: 18px; }
+  .help p { margin-bottom: 9px; }
+  .help b { color: #ffe9b8; }
+</style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="topbar">
+    <div class="res">🪵 <span id="res-wood">0</span></div>
+    <div class="res">🍖 <span id="res-food">0</span></div>
+    <div class="res">🪙 <span id="res-gold">0</span></div>
+    <div class="res">🪨 <span id="res-stone">0</span></div>
+    <div class="res" id="res-pop">0/0</div>
+    <div id="res-age">Dark Age</div>
+    <button id="btn-menu">☰</button>
+  </div>
+
+  <button class="quick" id="btn-idle" style="display:none">👷<span id="idle-count">0</span></button>
+  <button class="quick" id="btn-army">🛡️</button>
+
+  <div id="panel">
+    <div id="minimap-wrap"><canvas id="minimap"></canvas></div>
+    <div id="panel-right">
+      <div id="panel-info"></div>
+      <div id="panel-actions"></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <div id="overlay" class="hidden"><div id="overlay-box"></div></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
