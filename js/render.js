@@ -156,6 +156,42 @@ function fringeSprite(t, dir) {
     g.fill();
   });
 }
+// soft fog-of-war edges: darkness bleeding from unexplored (black) or
+// dimmed (dim) neighbors onto a lit tile
+function fogFringe(kind, dir) {
+  return cached(`fog_${kind}_${dir}`, TW2 * 2 + 2, TH2 * 2 + 2, (g, w, h) => {
+    const cx = w / 2, cy = h / 2;
+    const mids = [[cx / 2, cy / 2], [cx * 1.5, cy / 2], [cx * 1.5, cy * 1.5], [cx / 2, cy * 1.5]];
+    const [ex, ey] = mids[dir];
+    const grad = g.createLinearGradient(ex, ey, cx, cy);
+    if (kind === 'black') {
+      grad.addColorStop(0, 'rgba(11,14,18,0.95)');
+      grad.addColorStop(0.85, 'rgba(11,14,18,0)');
+    } else {
+      grad.addColorStop(0, 'rgba(8,10,16,0.4)');
+      grad.addColorStop(0.7, 'rgba(8,10,16,0)');
+    }
+    diamondPath(g, cx, cy, cx, cy);
+    g.fillStyle = grad;
+    g.fill();
+  });
+}
+
+// pale turquoise shallows on the water side of a shoreline (under the foam)
+function shallowSprite(dir) {
+  return cached(`shal_${dir}`, TW2 * 2 + 2, TH2 * 2 + 2, (g, w, h) => {
+    const cx = w / 2, cy = h / 2;
+    const mids = [[cx / 2, cy / 2], [cx * 1.5, cy / 2], [cx * 1.5, cy * 1.5], [cx / 2, cy * 1.5]];
+    const [ex, ey] = mids[dir];
+    const grad = g.createLinearGradient(ex, ey, cx, cy);
+    grad.addColorStop(0, 'rgba(130,205,205,0.42)');
+    grad.addColorStop(0.55, 'rgba(130,205,205,0)');
+    diamondPath(g, cx, cy, cx, cy);
+    g.fillStyle = grad;
+    g.fill();
+  });
+}
+
 // white foam on the water side of a shoreline
 function foamSprite(dir) {
   return cached(`foam_${dir}`, TW2 * 2 + 2, TH2 * 2 + 2, (g, w, h) => {
@@ -217,40 +253,74 @@ function doodadSprite(kind) {
 }
 
 // ---------- building sprites ----------
-function buildingSprite(type, owner, done) {
-  const key = `b_${type}_${owner}_${done ? 1 : 0}`;
+// extra: construction stage (0 stakes, 1 frame) while building,
+// or age tier (0 dark / 1 feudal / 2 castle+) for tiered buildings once done
+function buildingSprite(type, owner, done, extra) {
+  if (extra === undefined) extra = 1;
+  const key = `b_${type}_${owner}_${done ? 1 : 0}_${extra}`;
   const d = BUILDINGS[type];
   const s = d.size;
   const w = (s + 1) * TW2 * 2, h = (s + 1) * TH2 * 2 + 78;
   return cached(key, w, h, (g) => {
     const cx = w / 2, base = h - (s + 1) * TH2;
     const col = G ? G.players[owner].color : '#888';
-    drawBuildingArt(g, type, s, cx, base, col, done);
+    drawBuildingArt(g, type, s, cx, base, col, done, extra);
   });
 }
 
-function drawBuildingArt(g, type, s, cx, base, teamCol, done) {
+function drawBuildingArt(g, type, s, cx, base, teamCol, done, extra) {
   const fw = s * TW2, fh = s * TH2; // footprint half-extents
   const rng = mulberry32(s * 977 + type.length * 131);
+  const tier = done ? (extra | 0) : 1;
 
   // soft cast shadow, offset to the lower-right (sun from upper-left)
-  g.fillStyle = 'rgba(15,20,10,0.28)';
+  g.fillStyle = 'rgba(15,20,10,0.32)';
   g.beginPath();
-  g.ellipse(cx + fw * 0.12, base + fh * 0.12, fw * 1.02, fh * 0.86, 0, 0, 7);
+  g.ellipse(cx + fw * 0.16, base + fh * 0.14, fw * 1.08, fh * 0.92, 0, 0, 7);
   g.fill();
 
-  if (!done) { // construction site: staked-out foundation + timber frame
+  if (!done) {
+    const stage = extra | 0;
+    // staked-out foundation
     g.fillStyle = 'rgba(150,120,75,0.45)';
     diamondPath(g, cx, base, fw, fh); g.fill();
-    g.strokeStyle = '#7c5f38'; g.lineWidth = 2.2;
-    for (let i = 0; i < s * 2; i++) {
-      const t = (i + 0.5) / (s * 2);
-      const px = cx - fw + t * fw * 2;
-      g.beginPath(); g.moveTo(px, base); g.lineTo(px, base - 16 - 9 * s); g.stroke();
+    g.strokeStyle = 'rgba(90,64,32,0.8)'; g.lineWidth = 1.2;
+    diamondPath(g, cx, base, fw, fh); g.stroke();
+    if (stage === 0) {
+      // survey stakes with string, a few ground planks and a materials pile
+      g.strokeStyle = '#7c5f38'; g.lineWidth = 2;
+      for (const [dx, dy] of [[-fw, 0], [fw, 0], [0, -fh], [0, fh]]) {
+        g.beginPath(); g.moveTo(cx + dx, base + dy); g.lineTo(cx + dx, base + dy - 8); g.stroke();
+      }
+      g.strokeStyle = 'rgba(230,220,190,0.55)'; g.lineWidth = 0.8;
+      g.beginPath();
+      g.moveTo(cx - fw, base - 7); g.lineTo(cx, base - fh - 7); g.lineTo(cx + fw, base - 7); g.lineTo(cx, base + fh - 7);
+      g.closePath(); g.stroke();
+      g.fillStyle = '#a3814f';
+      g.fillRect(cx - fw * 0.35, base - 4, fw * 0.45, 3);
+      g.fillRect(cx - fw * 0.25, base - 7.5, fw * 0.45, 3);
+      g.fillStyle = '#8d8d8d';
+      g.beginPath(); g.arc(cx + fw * 0.4, base - 3, 3.4, 0, 7); g.fill();
+    } else {
+      // timber skeleton + partial wall courses rising
+      const wh = 10 + s * 6;
+      g.fillStyle = 'rgba(190,170,135,0.85)';
+      g.beginPath();
+      g.moveTo(cx - fw, base); g.lineTo(cx, base + fh); g.lineTo(cx, base + fh - wh * 0.5); g.lineTo(cx - fw, base - wh * 0.5);
+      g.closePath(); g.fill();
+      g.beginPath();
+      g.moveTo(cx, base + fh); g.lineTo(cx + fw, base); g.lineTo(cx + fw, base - wh * 0.5); g.lineTo(cx, base + fh - wh * 0.5);
+      g.closePath(); g.fill();
+      g.strokeStyle = '#7c5f38'; g.lineWidth = 2.2;
+      for (let i = 0; i < s * 2; i++) {
+        const t = (i + 0.5) / (s * 2);
+        const px = cx - fw + t * fw * 2;
+        g.beginPath(); g.moveTo(px, base); g.lineTo(px, base - 16 - 9 * s); g.stroke();
+      }
+      g.strokeStyle = '#93744a';
+      g.beginPath(); g.moveTo(cx - fw * 0.7, base - 18 - 9 * s); g.lineTo(cx + fw * 0.7, base - 18 - 9 * s); g.stroke();
+      g.beginPath(); g.moveTo(cx - fw * 0.55, base - 6); g.lineTo(cx + fw * 0.4, base - 24 - 6 * s); g.stroke();
     }
-    g.strokeStyle = '#93744a';
-    g.beginPath(); g.moveTo(cx - fw * 0.7, base - 18 - 9 * s); g.lineTo(cx + fw * 0.7, base - 18 - 9 * s); g.stroke();
-    g.beginPath(); g.moveTo(cx - fw * 0.55, base - 6); g.lineTo(cx + fw * 0.4, base - 24 - 6 * s); g.stroke();
     return;
   }
 
@@ -332,8 +402,9 @@ function drawBuildingArt(g, type, s, cx, base, teamCol, done) {
     baseAO(cx - fw, base, cx, base + fh);
     baseAO(cx, base + fh, cx + fw, base);
   };
-  // tiled pyramid roof over the wall tops: concentric shingle courses
-  const roof = (peak, colLit, colDark, trim) => {
+  // pyramid roof over the wall tops. style: 'shingle' (default) draws
+  // concentric tile courses; 'thatch' draws radial straw with ragged eaves
+  const roof = (peak, colLit, colDark, trim, style) => {
     const py = base - wallH;
     const apexY = py - fh * 0.42 - peak;
     // dark (back) half
@@ -342,19 +413,43 @@ function drawBuildingArt(g, type, s, cx, base, teamCol, done) {
     // lit (front) half
     g.fillStyle = colLit;
     g.beginPath(); g.moveTo(cx - fw, py); g.lineTo(cx, py + fh); g.lineTo(cx + fw, py); g.lineTo(cx, apexY); g.closePath(); g.fill();
-    // shingle courses: concentric chevrons shrinking toward the eaves
-    g.strokeStyle = 'rgba(40,20,12,0.3)'; g.lineWidth = 1;
-    const rows = 4 + s;
-    for (let i = 1; i < rows; i++) {
-      const t = i / rows; // 0 at eave, 1 at apex
-      const lx = cx - fw * (1 - t), rx = cx + fw * (1 - t);
-      const eY = py + fh * (1 - t) + (apexY - py - fh) * 0; // front chevron point
-      const sideY = py + (apexY - py) * t * 0.0;            // stays on the eave line, lifted by t
+    if (style === 'thatch') {
+      // radial straw strands from the apex
+      g.strokeStyle = 'rgba(96,74,34,0.4)'; g.lineWidth = 1;
+      for (let i = 0; i <= 10; i++) {
+        const t = i / 10;
+        const ex = cx - fw + t * fw * 2;
+        const ey = py + fh * (1 - Math.abs(t * 2 - 1));
+        g.beginPath(); g.moveTo(cx, apexY); g.lineTo(ex, ey); g.stroke();
+      }
+      // ragged eave scallops
+      g.fillStyle = colLit;
+      for (let i = 0; i <= 8; i++) {
+        const t = i / 8;
+        const ex = cx - fw + t * fw * 2;
+        const ey = py + fh * (1 - Math.abs(t * 2 - 1));
+        g.beginPath(); g.arc(ex, ey + 1.6, 2.4, 0, Math.PI); g.fill();
+      }
+      // binding course near the ridge
+      g.strokeStyle = 'rgba(70,52,24,0.6)'; g.lineWidth = 1.4;
       g.beginPath();
-      g.moveTo(lx, py + (apexY - py) * t);
-      g.lineTo(cx, py + fh * (1 - t) + (apexY - py) * t);
-      g.lineTo(rx, py + (apexY - py) * t);
+      g.moveTo(cx - fw * 0.25, py + (apexY - py) * 0.7);
+      g.lineTo(cx, py + fh * 0.3 + (apexY - py) * 0.7);
+      g.lineTo(cx + fw * 0.25, py + (apexY - py) * 0.7);
       g.stroke();
+    } else {
+      // shingle courses: concentric chevrons shrinking toward the eaves
+      g.strokeStyle = 'rgba(40,20,12,0.3)'; g.lineWidth = 1;
+      const rows = 4 + s;
+      for (let i = 1; i < rows; i++) {
+        const t = i / rows; // 0 at eave, 1 at apex
+        const lx = cx - fw * (1 - t), rx = cx + fw * (1 - t);
+        g.beginPath();
+        g.moveTo(lx, py + (apexY - py) * t);
+        g.lineTo(cx, py + fh * (1 - t) + (apexY - py) * t);
+        g.lineTo(rx, py + (apexY - py) * t);
+        g.stroke();
+      }
     }
     // eave + ridge trim
     g.strokeStyle = trim; g.lineWidth = 1.6;
@@ -396,10 +491,21 @@ function drawBuildingArt(g, type, s, cx, base, teamCol, done) {
 
   switch (type) {
     case 'towncenter': {
-      walls('stone', '#ddd3bc', '#b8ab8d', '#c0b295', '#998b6e', 'rgba(80,66,45,0.35)');
-      door(0.5, 7);
-      win(1, 0.3, 0.55); win(1, 0.7, 0.55);
-      roof(18, '#a8503c', '#7e3a2c', '#5f2c20');
+      if (tier === 0) { // Dark Age: rough timber hall with thatch
+        walls('plank', '#a8834f', '#8d6c40', '#96733f', '#7d5f36', 'rgba(60,42,22,0.5)');
+        door(0.5, 7);
+        roof(14, '#c2a05c', '#9c8047', '#6b5426', 'thatch');
+      } else if (tier === 1) { // Feudal: stone hall, red tiled roof
+        walls('stone', '#ddd3bc', '#b8ab8d', '#c0b295', '#998b6e', 'rgba(80,66,45,0.35)');
+        door(0.5, 7);
+        win(1, 0.3, 0.55); win(1, 0.7, 0.55);
+        roof(18, '#a8503c', '#7e3a2c', '#5f2c20');
+      } else { // Castle+: dressed stone, slate roof
+        walls('stone', '#e2dbc9', '#bdb29a', '#c8bda6', '#a0937a', 'rgba(80,66,45,0.35)');
+        door(0.5, 7);
+        win(0, 0.25, 0.55); win(1, 0.3, 0.55); win(1, 0.7, 0.55);
+        roof(18, '#5c6e82', '#46566a', '#334050');
+      }
       // second-story lookout
       g.fillStyle = '#cfc4a8';
       g.fillRect(cx - 12, base - wallH - fh * 0.42 - 30, 24, 18);
@@ -412,15 +518,28 @@ function drawBuildingArt(g, type, s, cx, base, teamCol, done) {
       break;
     }
     case 'house': {
-      walls('timber', '#e2d6b8', '#c4b696', '#cbbd9d', '#a99a7c', '#6b563c');
-      door(0.5, 4.5);
-      win(1, 0.5, 0.5);
-      roof(10, '#a5623a', '#7c4a2c', '#5c3820');
-      // chimney with smoke wisp
-      g.fillStyle = '#8f8478'; g.fillRect(cx + fw * 0.3, base - wallH - fh * 0.42 - 16, 6, 12);
-      g.fillStyle = 'rgba(220,220,220,0.35)';
-      g.beginPath(); g.arc(cx + fw * 0.3 + 3, base - wallH - fh * 0.42 - 21, 3, 0, 7); g.fill();
-      g.beginPath(); g.arc(cx + fw * 0.3 + 6, base - wallH - fh * 0.42 - 26, 2.2, 0, 7); g.fill();
+      if (tier === 0) { // Dark Age hovel: planks + thatch
+        walls('plank', '#b08a55', '#8d6c40', '#997643', '#7a5d36', 'rgba(60,42,22,0.5)');
+        door(0.5, 4.5);
+        roof(9, '#c2a05c', '#9c8047', '#6b5426', 'thatch');
+      } else if (tier === 1) { // Feudal: half-timbered cottage
+        walls('timber', '#e2d6b8', '#c4b696', '#cbbd9d', '#a99a7c', '#6b563c');
+        door(0.5, 4.5);
+        win(1, 0.5, 0.5);
+        roof(10, '#a5623a', '#7c4a2c', '#5c3820');
+      } else { // Castle+: stone townhouse
+        walls('stone', '#d5cbb6', '#b0a58c', '#bcb195', '#948a70', 'rgba(80,66,45,0.35)');
+        door(0.5, 4.5);
+        win(0, 0.28, 0.5); win(1, 0.5, 0.5);
+        roof(10, '#8a4636', '#673428', '#4a251c');
+      }
+      // chimney with smoke wisp (from Feudal on)
+      if (tier >= 1) {
+        g.fillStyle = '#8f8478'; g.fillRect(cx + fw * 0.3, base - wallH - fh * 0.42 - 16, 6, 12);
+        g.fillStyle = 'rgba(220,220,220,0.35)';
+        g.beginPath(); g.arc(cx + fw * 0.3 + 3, base - wallH - fh * 0.42 - 21, 3, 0, 7); g.fill();
+        g.beginPath(); g.arc(cx + fw * 0.3 + 6, base - wallH - fh * 0.42 - 26, 2.2, 0, 7); g.fill();
+      }
       break;
     }
     case 'mill': {
@@ -1027,8 +1146,14 @@ function rigHorse(g, cx, feetY, ph, coat, teamCol, caparison) {
 }
 
 // -- per-type look: colors + gear drawn onto the humanoid rig --
-function unitLook(type, teamCol) {
+// atk=true swaps the held weapon for a striking pose (frame 3)
+function unitLook(type, teamCol, atk) {
   const steel = '#b8c0ca', steelD = '#8f99a6', wood = '#8a6b40';
+  const look = unitLookBase(type, teamCol, steel, steelD, wood);
+  if (atk && look.gear.holdAtk) look.gear.hold = look.gear.holdAtk;
+  return look;
+}
+function unitLookBase(type, teamCol, steel, steelD, wood) {
   switch (type) {
     case 'villager': return {
       c: { tunic: '#b08a55', sleeve: '#b08a55', legs: '#6e5a43', tabard: teamCol, H: 26 },
@@ -1067,6 +1192,16 @@ function unitLook(type, teamCol) {
           g.beginPath(); g.moveTo(hx - 2.2, hy2 + 1.6); g.lineTo(hx + 2.2, hy2 + 3); g.stroke();
           return [hx, hy2];
         },
+        holdAtk: (g, cx, fy, H, shY) => { // horizontal sword swing
+          const hx = cx + H * 0.34, hy2 = shY + H * 0.08;
+          g.strokeStyle = '#e8eef4'; g.lineWidth = 1.8;
+          g.beginPath(); g.moveTo(hx, hy2); g.lineTo(hx + H * 0.52, hy2 - H * 0.06); g.stroke();
+          g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 0.8;
+          g.beginPath(); g.moveTo(hx + 2, hy2 - 1.6); g.lineTo(hx + H * 0.5, hy2 - H * 0.06 - 1.6); g.stroke();
+          g.strokeStyle = wood; g.lineWidth = 1.4;
+          g.beginPath(); g.moveTo(hx - 0.6, hy2 - 2.6); g.lineTo(hx - 0.6, hy2 + 2.6); g.stroke();
+          return [hx, hy2];
+        },
       },
     };
     case 'guard': return {
@@ -1097,6 +1232,14 @@ function unitLook(type, teamCol) {
           g.beginPath(); g.moveTo(hx - 2.6, hy2 + 2.4); g.lineTo(hx + 2.6, hy2 + 4); g.stroke();
           return [hx, hy2 + 1];
         },
+        holdAtk: (g, cx, fy, H, shY) => { // overhead cleave
+          const hx = cx + H * 0.36, hy2 = shY + H * 0.06;
+          g.strokeStyle = '#e8eef4'; g.lineWidth = 2.1;
+          g.beginPath(); g.moveTo(hx, hy2); g.lineTo(hx + H * 0.55, hy2 + H * 0.1); g.stroke();
+          g.strokeStyle = wood; g.lineWidth = 1.6;
+          g.beginPath(); g.moveTo(hx - 1, hy2 - 3); g.lineTo(hx - 1, hy2 + 3); g.stroke();
+          return [hx, hy2];
+        },
       },
     };
     case 'spearman': return {
@@ -1121,6 +1264,16 @@ function unitLook(type, teamCol) {
           g.fillStyle = '#d3d9df';
           const tx = hx + H * 0.16, ty = shY - H * 0.5;
           g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx + 2.6, ty - 5.4); g.lineTo(tx - 1.6, ty - 1.6); g.closePath(); g.fill();
+          g.strokeStyle = OL; g.lineWidth = 0.5; g.stroke();
+          return [hx, hy2];
+        },
+        holdAtk: (g, cx, fy, H, shY) => { // level thrust
+          const hx = cx + H * 0.3, hy2 = shY + H * 0.16;
+          g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.5;
+          g.beginPath(); g.moveTo(cx - H * 0.15, hy2 + 2); g.lineTo(hx + H * 0.55, hy2); g.stroke();
+          g.fillStyle = '#d3d9df';
+          const tx = hx + H * 0.55, ty = hy2;
+          g.beginPath(); g.moveTo(tx, ty - 2); g.lineTo(tx + 5.4, ty); g.lineTo(tx, ty + 2); g.closePath(); g.fill();
           g.strokeStyle = OL; g.lineWidth = 0.5; g.stroke();
           return [hx, hy2];
         },
@@ -1153,6 +1306,22 @@ function unitLook(type, teamCol) {
           g.stroke();
           return [hx, hy2];
         },
+        holdAtk: (g, cx, fy, H, shY) => { // bow at full draw, arrow nocked
+          const hx = cx + H * 0.34, hy2 = shY + H * 0.12;
+          const r = H * 0.26;
+          g.strokeStyle = wood; g.lineWidth = 1.5;
+          g.beginPath(); g.arc(hx, hy2, r, -1.35, 1.35); g.stroke();
+          const ax = hx + Math.cos(-1.35) * r, ay = hy2 + Math.sin(-1.35) * r;
+          const bx2 = hx + Math.cos(1.35) * r, by2 = hy2 + Math.sin(1.35) * r;
+          const dx2 = hx - H * 0.2; // drawn string apex at the cheek
+          g.strokeStyle = 'rgba(235,230,215,0.9)'; g.lineWidth = 0.6;
+          g.beginPath(); g.moveTo(ax, ay); g.lineTo(dx2, hy2); g.lineTo(bx2, by2); g.stroke();
+          g.strokeStyle = '#c9b48a'; g.lineWidth = 1;
+          g.beginPath(); g.moveTo(dx2, hy2); g.lineTo(hx + r + 2, hy2); g.stroke();
+          g.fillStyle = '#d3d9df';
+          g.beginPath(); g.moveTo(hx + r + 2, hy2 - 1.4); g.lineTo(hx + r + 5.4, hy2); g.lineTo(hx + r + 2, hy2 + 1.4); g.closePath(); g.fill();
+          return [dx2 + 2, hy2];
+        },
       },
     };
     case 'skirmisher': return {
@@ -1175,6 +1344,15 @@ function unitLook(type, teamCol) {
           g.fillStyle = '#d3d9df';
           const tx = hx + H * 0.2, ty = hy2 - H * 0.42;
           g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx + 1.8, ty - 3.6); g.lineTo(tx - 1.2, ty - 1); g.closePath(); g.fill();
+          return [hx, hy2];
+        },
+        holdAtk: (g, cx, fy, H, shY) => { // javelin cocked overhead to hurl
+          const hx = cx + H * 0.3, hy2 = shY - H * 0.02;
+          g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.2;
+          g.beginPath(); g.moveTo(hx - H * 0.28, hy2 + H * 0.1); g.lineTo(hx + H * 0.42, hy2 - H * 0.08); g.stroke();
+          g.fillStyle = '#d3d9df';
+          const tx = hx + H * 0.42, ty = hy2 - H * 0.08;
+          g.beginPath(); g.moveTo(tx, ty - 1.6); g.lineTo(tx + 4.4, ty - 0.6); g.lineTo(tx, ty + 1.4); g.closePath(); g.fill();
           return [hx, hy2];
         },
       },
@@ -1212,7 +1390,8 @@ function unitSprite(type, owner, frame) {
   return cached(key, w, h, (g) => {
     const teamCol = G ? G.players[owner].color : '#888';
     const cx = w / 2, fy = h - 6;
-    const ph = frame === 0 ? 0 : frame === 1 ? 1 : -1;
+    const atk = frame === 3;
+    const ph = frame === 1 ? 1 : frame === 2 ? -1 : 0;
     if (d.cls === 'cav') {
       rigHorse(g, cx, fy, ph, type === 'scout' ? '#a3814f' : '#4e4036', teamCol, type !== 'scout');
       // rider
@@ -1222,37 +1401,48 @@ function unitSprite(type, owner, frame) {
         : { c: { tunic: '#b8c0ca', sleeve: '#8f99a6', legs: '#4c545e', tabard: teamCol, H: 18 }, gear: {} };
       rigHumanoid(g, cx - 1, ry, 0, look.c, look.gear);
       if (type !== 'scout') {
-        // upright lance + kite shield
+        // lance: upright at rest, leveled at the enemy when striking
         g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.4;
-        g.beginPath(); g.moveTo(cx + 6, fy - 8); g.lineTo(cx + 9, fy - 38); g.stroke();
+        g.beginPath();
+        if (atk) { g.moveTo(cx - 2, fy - 21); g.lineTo(cx + 19, fy - 13); }
+        else { g.moveTo(cx + 6, fy - 8); g.lineTo(cx + 9, fy - 38); }
+        g.stroke();
         g.fillStyle = '#d3d9df';
-        g.beginPath(); g.moveTo(cx + 9, fy - 38); g.lineTo(cx + 10.6, fy - 43); g.lineTo(cx + 7.6, fy - 39.5); g.closePath(); g.fill();
+        if (atk) { g.beginPath(); g.moveTo(cx + 19, fy - 14.6); g.lineTo(cx + 24, fy - 12.4); g.lineTo(cx + 18.6, fy - 11.2); g.closePath(); g.fill(); }
+        else { g.beginPath(); g.moveTo(cx + 9, fy - 38); g.lineTo(cx + 10.6, fy - 43); g.lineTo(cx + 7.6, fy - 39.5); g.closePath(); g.fill(); }
         g.fillStyle = teamCol;
         g.beginPath();
         g.moveTo(cx - 8, fy - 24); g.lineTo(cx - 2.5, fy - 24); g.lineTo(cx - 4.5, fy - 14); g.lineTo(cx - 7, fy - 15);
         g.closePath(); g.fill();
         g.strokeStyle = '#e0d8c0'; g.lineWidth = 0.9; g.stroke();
       } else {
-        // scout's light spear
+        // scout's light spear: couched forward when striking
         g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.2;
-        g.beginPath(); g.moveTo(cx + 5, fy - 10); g.lineTo(cx + 10, fy - 34); g.stroke();
+        g.beginPath();
+        if (atk) { g.moveTo(cx - 3, fy - 18); g.lineTo(cx + 17, fy - 13); }
+        else { g.moveTo(cx + 5, fy - 10); g.lineTo(cx + 10, fy - 34); }
+        g.stroke();
+        if (atk) {
+          g.fillStyle = '#d3d9df';
+          g.beginPath(); g.moveTo(cx + 17, fy - 14.4); g.lineTo(cx + 21, fy - 12.6); g.lineTo(cx + 16.6, fy - 11.6); g.closePath(); g.fill();
+        }
       }
       return;
     }
     if (d.cls === 'siege') {
-      drawSiegeSprite(g, type, cx, fy, teamCol);
+      drawSiegeSprite(g, type, cx, fy, teamCol, atk);
       return;
     }
     if (d.cls === 'ship') {
       drawShipSprite(g, type, cx, fy, teamCol);
       return;
     }
-    const look = unitLook(type, teamCol);
-    rigHumanoid(g, cx, fy, frame === 0 ? 0 : frame === 1 ? 1 : -1, look.c, look.gear);
+    const look = unitLook(type, teamCol, atk);
+    rigHumanoid(g, cx, fy, ph, look.c, look.gear);
   });
 }
 
-function drawSiegeSprite(g, type, cx, fy, teamCol) {
+function drawSiegeSprite(g, type, cx, fy, teamCol, atk) {
   const wood1 = '#7a5c36', wood2 = '#94744a', dark = '#54432a';
   const plank = (x, y, w2, h2) => {
     g.fillStyle = wood1; g.fillRect(x, y, w2, h2);
@@ -1275,26 +1465,33 @@ function drawSiegeSprite(g, type, cx, fy, teamCol) {
     g.strokeStyle = 'rgba(60,42,22,0.6)'; g.lineWidth = 0.9;
     g.beginPath(); g.moveTo(cx - 11, fy - 18); g.lineTo(cx + 11, fy - 18); g.stroke();
     g.beginPath(); g.moveTo(cx - 7, fy - 20.4); g.lineTo(cx + 7, fy - 20.4); g.stroke();
-    // the log
+    // the log — rammed forward on the strike frame
+    const lx = atk ? 6 : 0;
     g.strokeStyle = dark; g.lineWidth = 3.4; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(cx - 10, fy - 9); g.lineTo(cx + 14, fy - 9); g.stroke();
+    g.beginPath(); g.moveTo(cx - 10 + lx, fy - 9); g.lineTo(cx + 14 + lx, fy - 9); g.stroke();
     g.fillStyle = '#8f99a6';
-    g.beginPath(); g.arc(cx + 15, fy - 9, 2.4, 0, 7); g.fill();
+    g.beginPath(); g.arc(cx + 15 + lx, fy - 9, 2.4, 0, 7); g.fill();
     g.strokeStyle = OL; g.lineWidth = 0.6; g.stroke();
     g.fillStyle = teamCol; g.fillRect(cx - 3, fy - 25.5, 6, 3);
   } else if (type === 'mangonel') {
     for (const wx of [-8, 8]) wheel(cx + wx, fy - 3, 3.4);
     plank(cx - 11, fy - 11, 22, 6);
-    // frame + torsion arm with bucket
+    // frame + torsion arm with bucket (slammed forward when fired)
     g.strokeStyle = dark; g.lineWidth = 2.2;
     g.beginPath(); g.moveTo(cx - 6, fy - 11); g.lineTo(cx - 2, fy - 20); g.lineTo(cx + 2, fy - 11); g.stroke();
     g.lineWidth = 2.6;
-    g.beginPath(); g.moveTo(cx - 3, fy - 10); g.lineTo(cx + 9, fy - 24); g.stroke();
+    g.beginPath();
+    if (atk) { g.moveTo(cx - 3, fy - 10); g.lineTo(cx + 14, fy - 15); }
+    else { g.moveTo(cx - 3, fy - 10); g.lineTo(cx + 9, fy - 24); }
+    g.stroke();
+    const bx3 = atk ? cx + 14.5 : cx + 9.5, by3 = atk ? fy - 15.5 : fy - 24.5;
     g.fillStyle = '#3f3524';
-    g.beginPath(); g.arc(cx + 9.5, fy - 24.5, 3.2, 0, 7); g.fill();
+    g.beginPath(); g.arc(bx3, by3, 3.2, 0, 7); g.fill();
     g.strokeStyle = OL; g.lineWidth = 0.6; g.stroke();
-    g.fillStyle = '#6a6a6a';
-    g.beginPath(); g.arc(cx + 9.5, fy - 25, 1.6, 0, 7); g.fill();
+    if (!atk) {
+      g.fillStyle = '#6a6a6a';
+      g.beginPath(); g.arc(cx + 9.5, fy - 25, 1.6, 0, 7); g.fill();
+    }
     g.fillStyle = teamCol; g.fillRect(cx - 11, fy - 14, 4, 2.6);
   } else { // trebuchet
     plank(cx - 13, fy - 6, 26, 4.5);
@@ -1302,16 +1499,25 @@ function drawSiegeSprite(g, type, cx, fy, teamCol) {
     g.beginPath(); g.moveTo(cx - 8, fy - 5); g.lineTo(cx, fy - 22); g.lineTo(cx + 8, fy - 5); g.stroke();
     g.lineWidth = 1.6;
     g.beginPath(); g.moveTo(cx - 4, fy - 5); g.lineTo(cx + 4, fy - 14); g.stroke();
-    // long arm + counterweight + sling
+    // long arm + counterweight + sling; arm snaps upright after loosing
     g.strokeStyle = '#6b563c'; g.lineWidth = 2.4;
-    g.beginPath(); g.moveTo(cx - 13, fy - 32); g.lineTo(cx + 8, fy - 16); g.stroke();
+    g.beginPath();
+    if (atk) { g.moveTo(cx - 3, fy - 36); g.lineTo(cx + 6, fy - 15); }
+    else { g.moveTo(cx - 13, fy - 32); g.lineTo(cx + 8, fy - 16); }
+    g.stroke();
+    const cwx = atk ? cx + 4 : cx + 5.5, cwy = atk ? fy - 17 : fy - 19;
     g.fillStyle = '#3f3524';
-    g.fillRect(cx + 5.5, fy - 19, 7, 7);
-    g.strokeStyle = OL; g.lineWidth = 0.7; g.strokeRect(cx + 5.5, fy - 19, 7, 7);
+    g.fillRect(cwx, cwy, 7, 7);
+    g.strokeStyle = OL; g.lineWidth = 0.7; g.strokeRect(cwx, cwy, 7, 7);
     g.strokeStyle = '#a8987a'; g.lineWidth = 1;
-    g.beginPath(); g.moveTo(cx - 13, fy - 32); g.quadraticCurveTo(cx - 17, fy - 26, cx - 15.5, fy - 20); g.stroke();
-    g.fillStyle = '#6a6a6a';
-    g.beginPath(); g.arc(cx - 15.5, fy - 19, 1.8, 0, 7); g.fill();
+    g.beginPath();
+    if (atk) { g.moveTo(cx - 3, fy - 36); g.quadraticCurveTo(cx - 5, fy - 30, cx - 4, fy - 25); }
+    else { g.moveTo(cx - 13, fy - 32); g.quadraticCurveTo(cx - 17, fy - 26, cx - 15.5, fy - 20); }
+    g.stroke();
+    if (!atk) {
+      g.fillStyle = '#6a6a6a';
+      g.beginPath(); g.arc(cx - 15.5, fy - 19, 1.8, 0, 7); g.fill();
+    }
     g.fillStyle = teamCol; g.fillRect(cx - 13, fy - 9.5, 4, 2.8);
   }
 }
@@ -1408,7 +1614,8 @@ function drawUnit(g, u, px, py, z) {
     g.beginPath(); g.ellipse(px + 1, py + 0.5, 7.5 * s, 3.2 * s, 0, 0, 7); g.fill();
   }
 
-  const frame = moving ? 1 + (((G.time * 8 + u.id) | 0) % 2) : 0;
+  const striking = (u.strikeT || 0) > 0 && d.cls !== 'vill' && d.cls !== 'monk' && d.cls !== 'ship';
+  const frame = striking ? 3 : moving ? 1 + (((G.time * 8 + u.id) | 0) % 2) : 0;
   const spr = unitSprite(u.type, u.owner, frame);
   const w = spr.width / 2, h = spr.height / 2; // css units
   const faceL = Math.cos(u.dir) < 0;
@@ -1474,21 +1681,25 @@ function render() {
         continue;
       }
       const t = G.map.terr[i];
-      const variant = (tx * 31 + ty * 17) & 3;
+      const variant = (tx * 31 + ty * 17) % 6;
       const frame = t === T_WATER ? (wFrame + ((tx * 7 + ty * 13) % 3)) % 3 : 0;
       const dx = px - TW2 * z - 1, dy = py - TH2 * z - 1;
       ctx.drawImage(tileSprite(t, variant, frame), dx, dy, tw, th);
-      // blend in higher-priority neighbors; foam where water meets land.
-      // Land blending is invisible when zoomed far out — skip it there.
+      // blend in higher-priority neighbors; shallows + foam where water
+      // meets land. Land blending is invisible zoomed far out — skip there.
       const myPrio = TERRAIN_PRIO[t];
       const detail = z >= 0.95;
+      const vis = G.visible[i];
       for (let dir = 0; dir < 4; dir++) {
         const nx = tx + FRINGE_DIRS[dir][0], ny = ty + FRINGE_DIRS[dir][1];
         if (!inMap(nx, ny)) continue;
         const nt = G.map.terr[tIdx(nx, ny)];
         if (nt === t) continue;
         if (detail && t !== T_WATER && TERRAIN_PRIO[nt] > myPrio) ctx.drawImage(fringeSprite(nt, dir), dx, dy, tw, th);
-        if (t === T_WATER && nt !== T_WATER) ctx.drawImage(foamSprite(dir), dx, dy, tw, th);
+        if (t === T_WATER && nt !== T_WATER) {
+          ctx.drawImage(shallowSprite(dir), dx, dy, tw, th);
+          ctx.drawImage(foamSprite(dir), dx, dy, tw, th);
+        }
       }
       // sparse decorative doodads on open land
       if (detail && t !== T_WATER && !G.map.res[i] && !G.map.occ[i]) {
@@ -1499,10 +1710,19 @@ function render() {
           ctx.drawImage(dd, px - dd.width / 4 * z, py - dd.height / 2 * z + 3 * z, dd.width / 2 * z, dd.height / 2 * z);
         }
       }
-      if (!G.visible[i]) {
+      if (!vis) {
         ctx.fillStyle = 'rgba(8,10,16,0.45)';
         diamondPath(ctx, px, py, TW2 * z + 1, TH2 * z + 1);
         ctx.fill();
+      }
+      // soft fog edges: darkness feathers in from unexplored neighbors,
+      // and the dim zone feathers into fully lit tiles
+      for (let dir = 0; dir < 4; dir++) {
+        const nx = tx + FRINGE_DIRS[dir][0], ny = ty + FRINGE_DIRS[dir][1];
+        if (!inMap(nx, ny)) continue;
+        const ni = tIdx(nx, ny);
+        if (!G.explored[ni]) ctx.drawImage(fogFringe('black', dir), dx, dy, tw, th);
+        else if (vis && !G.visible[ni]) ctx.drawImage(fogFringe('dim', dir), dx, dy, tw, th);
       }
     }
   }
@@ -1579,6 +1799,18 @@ function render() {
     }
   }
 
+  // ambient light: faint warm glow center-screen, cool shade at the edges
+  if (vigKey !== viewW + 'x' + viewH) {
+    vigKey = viewW + 'x' + viewH;
+    vigGrad = ctx.createRadialGradient(viewW / 2, viewH * 0.42, Math.min(viewW, viewH) * 0.3,
+                                       viewW / 2, viewH / 2, Math.max(viewW, viewH) * 0.72);
+    vigGrad.addColorStop(0, 'rgba(255,232,180,0.05)');
+    vigGrad.addColorStop(0.55, 'rgba(0,0,0,0)');
+    vigGrad.addColorStop(1, 'rgba(14,22,44,0.17)');
+  }
+  ctx.fillStyle = vigGrad;
+  ctx.fillRect(0, 0, viewW, viewH);
+
   // selection drag box
   if (UI.dragBox) {
     ctx.strokeStyle = 'rgba(220,255,220,0.9)'; ctx.lineWidth = 1.5;
@@ -1590,11 +1822,17 @@ function render() {
 
   renderMinimap();
 }
+let vigGrad = null, vigKey = '';
 
+const TIERED_BLDGS = { house: 1, towncenter: 1 };
 function drawBuilding(b, z) {
   const d = BUILDINGS[b.type];
   const [px, py] = worldToScreen(b.tx + b.size / 2, b.ty + b.size / 2);
-  const spr = buildingSprite(b.type, b.owner, b.done);
+  // extra = construction stage while building, or age tier once complete
+  const extra = b.done
+    ? (TIERED_BLDGS[b.type] ? Math.min(G.players[b.owner].age, 2) : 1)
+    : (b.progress / d.time < 0.45 ? 0 : 1);
+  const spr = buildingSprite(b.type, b.owner, b.done, extra);
   // sprite css size; its diamond center sits at y = cssH - (size+1)*TH2 within the sprite
   const cssW = spr.width / 2, cssH = spr.height / 2;
   const baseY = cssH - (b.size + 1) * TH2;

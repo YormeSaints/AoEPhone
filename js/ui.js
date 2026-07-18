@@ -196,7 +196,7 @@ const iconCache = new Map();
 function spriteIconURL(kind, type) {
   const key = `${kind}_${type}`;
   if (iconCache.has(key)) return iconCache.get(key);
-  const src = kind === 'b' ? buildingSprite(type, 0, true) : unitSprite(type, 0, 0);
+  const src = kind === 'b' ? buildingSprite(type, 0, true, 1) : unitSprite(type, 0, 0);
   const c = document.createElement('canvas');
   c.width = 80; c.height = 80;
   const g = c.getContext('2d');

@@ -95,7 +95,22 @@ function addBuilding(owner, type, tx, ty, finished) {
   G.buildings.push(b);
   const p = G.players[owner];
   if (finished && d.pop) p.popCap += d.pop;
+  if (finished) stampDirt(b);
   return b;
+}
+
+// grass around a working building gets trampled to dirt (persists in saves)
+function stampDirt(b) {
+  const d = BUILDINGS[b.type];
+  if (d.passable || d.water || b.type === 'palisade' || b.type === 'stonewall') return;
+  for (let y = b.ty - 1; y <= b.ty + b.size; y++)
+    for (let x = b.tx - 1; x <= b.tx + b.size; x++) {
+      if (!inMap(x, y)) continue;
+      const i = tIdx(x, y);
+      if (G.map.terr[i] !== T_GRASS && G.map.terr[i] !== T_GRASS2) continue;
+      const h = (((x * 73856093) ^ (y * 19349663)) >>> 0) % 10;
+      if (h < 4) G.map.terr[i] = T_DIRT;
+    }
 }
 
 function addUnit(owner, type, x, y) {
@@ -530,6 +545,7 @@ function updateUnit(u, dt) {
   const d = UNITS[u.type];
   u.cooldown -= dt;
   u.repath -= dt;
+  if (u.strikeT) u.strikeT = Math.max(0, u.strikeT - dt);
   switch (u.task) {
     case 'idle':
       if (d.cls === 'monk') monkIdleHeal(u, dt);
@@ -649,6 +665,7 @@ function updateAttack(u, dt, d) {
         sfxNear('hit', u.x, u.y);
       }
       u.cooldown = d.rof;
+      u.strikeT = 0.35; // brief attack pose for the renderer
     }
   }
 }
@@ -877,6 +894,7 @@ function updateBuild(u, dt, d) {
       b.hp = Math.min(b.maxhp, b.hp + def.hp * 0.9 * (dt / def.time));
       if (b.progress >= def.time) {
         b.done = true; b.hp = Math.max(b.hp, b.maxhp * 0.98); b.hp = b.maxhp;
+        stampDirt(b);
         if (def.pop) G.players[b.owner].popCap += def.pop;
         if (b.type === 'farm') { u.lastFarm = b; cmdFarm(u, b); return; }
         u.task = 'idle'; u.target = null;
