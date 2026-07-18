@@ -146,6 +146,16 @@ function pickEntity(px, py) {
     if (b && (b.owner === 0 || tileExplored(tx, ty))) return b;
     const r = G.map.res[tIdx(tx, ty)];
     if (r && tileExplored(tx, ty)) return r;
+    // forgiving resource targeting: snap to the nearest resource within ~a tile
+    let bestR = null, bdR = 1.1;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!inMap(tx + dx, ty + dy) || !tileExplored(tx + dx, ty + dy)) continue;
+      const rr = G.map.res[tIdx(tx + dx, ty + dy)];
+      if (!rr) continue;
+      const dd = Math.hypot(rr.tx + 0.5 - wx, rr.ty + 0.5 - wy);
+      if (dd < bdR) { bdR = dd; bestR = rr; }
+    }
+    if (bestR) return bestR;
   }
   // building sprites are tall: probe a few tiles "behind" (up-screen = -x,-y in world)
   for (let probe = 1; probe <= 4; probe++) {
@@ -220,7 +230,8 @@ function issueCommand(units, hit, wx, wy) {
   if (hit && hit.kind === 'res') {
     for (const v of vills) { v.lastRes = hit; v.lastFarm = null; cmdGather(v, hit); }
     for (const m of mil) cmdMove(m, wx, wy);
-    pingAt(wx, wy, '#ffe97a'); sfx('command');
+    G.effects.push({ kind: 'gatherPing', x: hit.tx + 0.5, y: hit.ty + 0.5, t: 0.9, rtype: hit.rtype });
+    sfx('command');
     return;
   }
   if (hit && hit.kind === 'bldg' && hit.owner === 0) {

@@ -797,6 +797,13 @@ function updateGather(u, dt, d) {
     r.amount -= take;
     u.carry += take; u.carryType = gives;
     u.gatherT = (u.gatherT || 0) + dt;
+    // periodic work debris synced loosely to the tool swing
+    u.workT = (u.workT || 0) + dt;
+    if (u.workT > 0.7) {
+      u.workT = 0;
+      const cols = { tree: '#c9a266', berry: '#c22b4e', gold: '#ffe066', stone: '#b5b5b5', fish: '#c8d8e8' };
+      G.effects.push({ kind: 'chip', x: r.tx + 0.5, y: r.ty + 0.3, t: 0.45, color: cols[r.rtype] || '#c9a266' });
+    }
     if (r.amount <= 0) removeResource(r);
   }
 }
@@ -818,6 +825,11 @@ function updateFarm(u, dt, d) {
     const rate = GATHER_RATE.farm * p.rates.farm;
     const take = Math.min(rate * dt, f.farmFood, dropAmount(u) - u.carry);
     f.farmFood -= take; u.carry += take; u.carryType = 'food';
+    u.workT = (u.workT || 0) + dt;
+    if (u.workT > 0.9) {
+      u.workT = 0;
+      G.effects.push({ kind: 'chip', x: u.x + 0.3, y: u.y - 0.1, t: 0.45, color: '#7cb85c' });
+    }
     if (f.farmFood <= 0) {
       // auto-reseed if affordable, else farm is exhausted
       if (p.res.wood >= 30) { p.res.wood -= 30; f.farmFood = BUILDINGS.farm.farmFood; }
@@ -832,6 +844,10 @@ function updateDeliver(u, dt, d) {
   if (!site) { u.task = 'idle'; return; }
   if (approach(u, site, 1.15, dt)) {
     G.players[u.owner].res[u.carryType] += u.carry;
+    // show the deposit landing: floating +N over the drop site
+    if (u.owner === 0) {
+      G.effects.push({ kind: 'float', x: u.x, y: u.y - 0.3, t: 1.3, amt: Math.round(u.carry), res: u.carryType });
+    }
     u.carry = 0;
     resumeWork(u);
   }
@@ -891,6 +907,11 @@ function updateBuild(u, dt, d) {
     // multiple builders speed up with diminishing returns handled implicitly (each adds full rate; fine)
     if (!b.done) {
       b.progress += dt;
+      u.workT = (u.workT || 0) + dt;
+      if (u.workT > 0.8) {
+        u.workT = 0;
+        G.effects.push({ kind: 'chip', x: u.x + (b.tx + b.size / 2 - u.x) * 0.4, y: u.y + (b.ty + b.size / 2 - u.y) * 0.4 - 0.2, t: 0.45, color: '#c9b48a' });
+      }
       b.hp = Math.min(b.maxhp, b.hp + def.hp * 0.9 * (dt / def.time));
       if (b.progress >= def.time) {
         b.done = true; b.hp = Math.max(b.hp, b.maxhp * 0.98); b.hp = b.maxhp;

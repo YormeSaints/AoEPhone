@@ -1627,16 +1627,54 @@ function drawUnit(g, u, px, py, z) {
 
   // dynamic overlays (drawn unmirrored)
   const flip = faceL ? -1 : 1;
-  if (working) { // swinging tool
-    const H = 26 * s;
+  if (working) { // swinging tool, shaped by the job at hand
     const wx = px + 7 * s * flip, wy = py - 14 * s;
     const swing = Math.sin(G.time * 9 + u.id) * 0.9;
+    const hx = wx + Math.cos(swing) * 7 * s * flip, hy = wy - Math.abs(Math.sin(swing)) * 8 * s;
+    let tool = 'axe';
+    if (u.task === 'build') tool = 'hammer';
+    else if (u.task === 'farm') tool = 'hoe';
+    else if (u.target && (u.target.rtype === 'gold' || u.target.rtype === 'stone')) tool = 'pick';
+    else if (u.target && u.target.rtype === 'berry') tool = 'sickle';
     g.strokeStyle = '#9c7a4a'; g.lineWidth = 1.3 * s; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(wx - 2 * s * flip, wy + 5 * s);
-    g.lineTo(wx + Math.cos(swing) * 7 * s * flip, wy - Math.abs(Math.sin(swing)) * 8 * s);
-    g.stroke();
-    g.fillStyle = '#c9ced4';
-    g.beginPath(); g.arc(wx + Math.cos(swing) * 7 * s * flip, wy - Math.abs(Math.sin(swing)) * 8 * s, 1.5 * s, 0, 7); g.fill();
+    g.beginPath(); g.moveTo(wx - 2 * s * flip, wy + 5 * s); g.lineTo(hx, hy); g.stroke();
+    if (tool === 'axe') {
+      g.fillStyle = '#c9ced4';
+      g.beginPath();
+      g.moveTo(hx, hy - 2 * s); g.lineTo(hx + 3.4 * s * flip, hy - 0.6 * s); g.lineTo(hx + 0.6 * s * flip, hy + 1.8 * s);
+      g.closePath(); g.fill();
+    } else if (tool === 'pick') {
+      g.strokeStyle = '#c9ced4'; g.lineWidth = 1.6 * s;
+      g.beginPath(); g.arc(hx, hy + 2.4 * s, 3.4 * s, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
+    } else if (tool === 'hammer') {
+      g.fillStyle = '#b8c0ca';
+      g.fillRect(hx - 2.4 * s, hy - 1.8 * s, 4.8 * s, 3 * s);
+      g.strokeStyle = 'rgba(40,44,52,0.7)'; g.lineWidth = 0.6; g.strokeRect(hx - 2.4 * s, hy - 1.8 * s, 4.8 * s, 3 * s);
+    } else if (tool === 'hoe') {
+      g.fillStyle = '#8f99a6';
+      g.beginPath();
+      g.moveTo(hx, hy); g.lineTo(hx + 2.6 * s * flip, hy + 2.6 * s); g.lineTo(hx + 0.6 * s * flip, hy + 3.4 * s);
+      g.closePath(); g.fill();
+    } else { // sickle
+      g.strokeStyle = '#c9ced4'; g.lineWidth = 1.2 * s;
+      g.beginPath(); g.arc(hx, hy, 2.6 * s, -0.5, Math.PI * 0.8); g.stroke();
+    }
+  }
+  // overhead task badge for your own workers: what they're gathering/doing
+  if (u.owner === 0 && cam.zoom >= 1.05 && (d.cls === 'vill' || u.type === 'fishingship')) {
+    let kind = null;
+    if (u.task === 'gather' && u.target) kind = { tree: 'wood', berry: 'food', fish: 'food', gold: 'gold', stone: 'stone' }[u.target.rtype];
+    else if (u.task === 'farm') kind = 'food';
+    else if (u.task === 'deliver' && u.carryType) kind = u.carryType;
+    else if (u.task === 'build') kind = 'hammer';
+    if (kind) {
+      const ic = hudIcon(kind);
+      const bobI = Math.sin(G.time * 3 + u.id) * 1.4;
+      const sz = 12;
+      g.globalAlpha = 0.92;
+      g.drawImage(ic, px - sz / 2, py - (naval ? 30 : 33) * s + bobI - sz, sz, sz);
+      g.globalAlpha = 1;
+    }
   }
   if (u.chant > 0 && d.cls === 'monk') {
     g.fillStyle = `rgba(255,230,140,${0.4 + 0.4 * Math.sin(G.time * 10)})`;
@@ -1914,6 +1952,43 @@ function drawEffect(fx, z) {
       const a = i * 2.1 + fx.t * 6;
       ctx.fillRect(px + Math.cos(a) * 6 * z - 1, py - 14 * z - (0.5 - fx.t) * 20 * z + Math.sin(a) * 3, 2.5, 2.5);
     }
+  } else if (fx.kind === 'chip') {
+    // work debris: flecks bursting from the strike point
+    const pr = 1 - fx.t / 0.45;
+    ctx.fillStyle = fx.color || '#c9a266';
+    ctx.globalAlpha = Math.max(0, fx.t / 0.45);
+    for (let i = 0; i < 4; i++) {
+      const a = i * 1.6 + 0.4;
+      const ddx = Math.cos(a) * pr * 9 * z;
+      const ddy = Math.sin(a) * pr * 4 * z - pr * 8 * z + pr * pr * 14 * z; // small arc with gravity
+      ctx.fillRect(px + ddx, py - 9 * z + ddy, 2.2, 2.2);
+    }
+    ctx.globalAlpha = 1;
+  } else if (fx.kind === 'float') {
+    // "+N" drifting up from a delivered load
+    const a = Math.min(1, fx.t);
+    const rise = (1.3 - fx.t) * 24 * z;
+    ctx.globalAlpha = a;
+    ctx.font = 'bold 12px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = 'rgba(20,12,4,0.85)'; ctx.lineWidth = 3;
+    ctx.strokeText('+' + fx.amt, px - 4, py - 18 * z - rise);
+    ctx.fillStyle = '#ffe9b8';
+    ctx.fillText('+' + fx.amt, px - 4, py - 18 * z - rise);
+    ctx.drawImage(hudIcon(fx.res), px + 6, py - 28 * z - rise, 13, 13);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  } else if (fx.kind === 'gatherPing') {
+    // command confirmation on the resource: pulsing rings + rising icon
+    const pr = 1 - fx.t / 0.9;
+    ctx.globalAlpha = Math.min(1, fx.t * 1.6);
+    ctx.strokeStyle = '#a0e88c'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(px, py, (6 + pr * 12) * z, (3 + pr * 6) * z, 0, 0, 7); ctx.stroke();
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.ellipse(px, py, (3 + pr * 8) * z, (1.5 + pr * 4) * z, 0, 0, 7); ctx.stroke();
+    const kind = { tree: 'wood', berry: 'food', fish: 'food', gold: 'gold', stone: 'stone' }[fx.rtype] || 'wood';
+    ctx.drawImage(hudIcon(kind), px - 8, py - 26 * z - pr * 12, 16, 16);
+    ctx.globalAlpha = 1;
   } else if (fx.kind === 'rubble') {
     ctx.fillStyle = `rgba(70,60,50,${Math.min(0.8, fx.t / 4)})`;
     const sz = fx.size * TW2 * 0.7 * z;

@@ -102,8 +102,21 @@ function parchTex() {
   });
 }
 
-// small drawn resource icons (retina 2x)
+// small drawn resource icons (retina 2x, cached — also used in-world)
+const hudIconCache = new Map();
+const hudIconURLs = new Map();
 function hudIcon(kind) {
+  if (hudIconCache.has(kind)) return hudIconCache.get(kind);
+  const c = hudIconDraw(kind);
+  hudIconCache.set(kind, c);
+  return c;
+}
+// buttons need independent copies (a canvas can only live in one DOM spot)
+function hudIconEl(kind) {
+  if (!hudIconURLs.has(kind)) hudIconURLs.set(kind, hudIconDraw(kind).toDataURL());
+  return iconEl(hudIconURLs.get(kind));
+}
+function hudIconDraw(kind) {
   return hudTexture(20, 20, (g, w, h) => {
     const cx = w / 2, cy = h / 2;
     g.lineWidth = 1;
@@ -172,6 +185,14 @@ function hudIcon(kind) {
       g.beginPath(); g.moveTo(cx - 6, cy + 8); g.lineTo(cx, cy); g.lineTo(cx + 6, cy + 8); g.stroke();
       g.fillStyle = '#f7de7a';
       g.beginPath(); g.arc(cx, cy - 6, 1.8, 0, 7); g.fill();
+    } else if (kind === 'hammer') {
+      g.strokeStyle = '#9c7a4a'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(cx - 4.5, cy + 6.5); g.lineTo(cx + 3.5, cy - 3.5); g.stroke();
+      g.fillStyle = '#b8c0ca';
+      g.save(); g.translate(cx + 4, cy - 4); g.rotate(0.68);
+      g.fillRect(-4.4, -3, 8.8, 6);
+      g.strokeStyle = '#4c545e'; g.lineWidth = 1; g.strokeRect(-4.4, -3, 8.8, 6);
+      g.restore();
     }
   });
 }
@@ -329,6 +350,31 @@ function rebuildPanel() {
     addBtn(panel, '✋', 'Stop', () => { for (const u of sel) { u.task = 'idle'; u.target = null; u.path = null; } sfx('click'); });
     const vills = sel.filter(u => u.kind === 'unit' && UNITS[u.type].cls === 'vill');
     if (vills.length) {
+      // quick-gather: one tap sends the crew to the nearest source of a resource
+      const gatherKinds = [
+        ['wood', 'Chop Wood', 'tree'], ['food', 'Forage', 'berry'],
+        ['gold', 'Mine Gold', 'gold'], ['stone', 'Quarry', 'stone'],
+      ];
+      for (const [k, label, rt] of gatherKinds) {
+        addBtn(panel, hudIconEl(k), label, () => {
+          const v0 = vills[0];
+          let target = nearestExploredRes(rt, v0.x | 0, v0.y | 0, 40);
+          if (!target && k === 'food') {
+            // berries gone: fall back to a free farm
+            const farm = G.buildings.find(b2 => b2.owner === 0 && b2.type === 'farm' && b2.done &&
+              (!b2.farmer || !alive(b2.farmer) || b2.farmer.task !== 'farm'));
+            if (farm) {
+              for (const v of vills) { v.lastFarm = farm; cmdFarm(v, farm); }
+              sfx('command'); refreshPanel(); return;
+            }
+          }
+          if (!target) { uiToast(`No ${label.toLowerCase().replace(/^\w+ /, '')} source in explored land`); return; }
+          for (const v of vills) { v.lastRes = target; v.lastFarm = null; cmdGather(v, target); }
+          G.effects.push({ kind: 'gatherPing', x: target.tx + 0.5, y: target.ty + 0.5, t: 0.9, rtype: target.rtype });
+          sfx('command');
+          refreshPanel();
+        }, 'gather');
+      }
       const pages = [
         ['house', 'mill', 'lumbercamp', 'miningcamp', 'farm', 'dock', 'market', 'palisade', 'stonewall', 'towncenter'],
         ['barracks', 'archeryrange', 'stable', 'blacksmith', 'monastery', 'tower', 'siegeworkshop', 'castle'],
@@ -387,7 +433,7 @@ function rebuildPanel() {
     if (t.from !== b.type || p.techs[id] || p.researching[id]) continue;
     if (t.age > p.age) continue;
     if (t.req && !p.techs[t.req]) continue;
-    addBtn(panel, hudIcon('scroll'), `${t.name}\n${costText(t.cost)}`, () => { if (startResearch(b, id)) sfx('click'); refreshPanel(); },
+    addBtn(panel, hudIconEl('scroll'), `${t.name}\n${costText(t.cost)}`, () => { if (startResearch(b, id)) sfx('click'); refreshPanel(); },
       canAfford(p, t.cost) ? 'tech' : 'tech nocash');
   }
   // age up at town center
@@ -395,7 +441,7 @@ function rebuildPanel() {
     const cost = AGE_COST[p.age + 1];
     const need = AGE_REQ_BLDGS[p.age + 1] - countAgeBuildings(p);
     const ok = need <= 0 && canAfford(p, cost);
-    addBtn(panel, hudIcon('age'), `${AGE_NAMES[p.age + 1]}\n${costText(cost)}${need > 0 ? `\nNeed ${need} more ${AGE_NAMES[p.age]} bldg` : ''}`,
+    addBtn(panel, hudIconEl('age'), `${AGE_NAMES[p.age + 1]}\n${costText(cost)}${need > 0 ? `\nNeed ${need} more ${AGE_NAMES[p.age]} bldg` : ''}`,
       () => { if (startAgeUp(b)) sfx('click'); refreshPanel(); }, ok ? 'age' : 'age nocash');
   }
 }
@@ -408,8 +454,38 @@ function resInfoHTML(r) {
 function unitInfoHTML(sel) {
   const first = sel[0], mine = first.owner === 0, count = sel.length;
   const nm = count > 1 ? `${count} units` : unitName(first);
+  const task = mine ? `<div class="sel-task">${unitTaskSummary(sel)}</div>` : '';
   return `<div class="sel-name">${mine ? '' : '🔴 '}${nm}</div>
-    <div class="sel-sub">${count === 1 ? `❤️${Math.ceil(first.hp)}/${first.maxhp} ⚔️${unitStat(first, 'atk')} 🛡${unitStat(first, 'armor')}/${unitStat(first, 'parmor')}` : ''}</div>`;
+    <div class="sel-sub">${count === 1 ? `❤️${Math.ceil(first.hp)}/${first.maxhp} ⚔️${unitStat(first, 'atk')} 🛡${unitStat(first, 'armor')}/${unitStat(first, 'parmor')}` : ''}</div>${task}`;
+}
+// live activity readout, e.g. "Chopping wood ×3 · Idle ×1"
+function unitTaskSummary(sel) {
+  const counts = {};
+  for (const u of sel) {
+    let k = 'Idle';
+    if (u.task === 'gather' && u.target) {
+      k = { tree: 'Chopping wood', berry: 'Foraging', gold: 'Mining gold', stone: 'Mining stone', fish: 'Fishing' }[u.target.rtype] || 'Gathering';
+    }
+    else if (u.task === 'farm') k = 'Farming';
+    else if (u.task === 'build') k = 'Building';
+    else if (u.task === 'deliver') k = 'Hauling goods';
+    else if (u.task === 'move') k = 'Moving';
+    else if (u.task === 'attack') k = 'Fighting';
+    counts[k] = (counts[k] || 0) + 1;
+  }
+  return Object.entries(counts).map(([k, n]) => sel.length > 1 ? `${k} ×${n}` : k).join(' · ');
+}
+// like findNearbyResource, but only sources the player has scouted
+function nearestExploredRes(rtype, cx, cy, maxR) {
+  for (let r = 0; r <= maxR; r++)
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const x = cx + dx, y = cy + dy;
+      if (!inMap(x, y) || !G.explored[tIdx(x, y)]) continue;
+      const rr = G.map.res[tIdx(x, y)];
+      if (rr && rr.rtype === rtype && rr.amount > 0) return rr;
+    }
+  return null;
 }
 function bldgInfoHTML(b) {
   const d = BUILDINGS[b.type], mine = b.owner === 0;
